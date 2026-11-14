@@ -1,4 +1,4 @@
-name: Build Godot game
+name: Build and deploy Godot game
 
 on:
   push:
@@ -9,6 +9,12 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   export:
@@ -36,13 +42,26 @@ jobs:
       - name: Package Windows build
         run: cd build/windows && zip -q ../KalyanaKathal-Windows.zip KalyanaKathal.exe
 
-      - name: Upload browser build
+      - name: Upload browser build artifact
         uses: actions/upload-artifact@v4
         with:
           name: KalyanaKathal-Web
           path: build/web/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web/
+
+      - name: Deploy to GitHub Pages
+        if: github.event_name != 'pull_request'
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
