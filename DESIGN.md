@@ -1,4 +1,4 @@
-﻿# Kalyana Kathal: The Life Quest
+# Kalyana Kathal: The Life Quest
 
 ## Game design: first playable slice
 

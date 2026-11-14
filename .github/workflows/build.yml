@@ -1,4 +1,4 @@
-﻿name: Build Godot game
+name: Build Godot game
 
 on:
   push:
