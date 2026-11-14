@@ -1,4 +1,4 @@
-# Kalyana Kathal: The Life Quest
+﻿# Kalyana Kathal: The Life Quest
 
 A Godot 4.7.2 prototype for a 2D college-corridor action and dialogue game.
 

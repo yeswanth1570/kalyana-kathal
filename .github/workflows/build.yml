@@ -1,0 +1,53 @@
+﻿name: Build Godot game
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+          include-templates: true
+
+      - name: Validate project scripts
+        run: godot --headless --editor --path . --quit
+
+      - name: Export browser build
+        run: mkdir -p build/web && godot --headless --path . --export-release "Web" build/web/index.html
+
+      - name: Export Windows build
+        run: mkdir -p build/windows && godot --headless --path . --export-release "Windows Desktop" build/windows/KalyanaKathal.exe
+
+      - name: Package Windows build
+        run: cd build/windows && zip -q ../KalyanaKathal-Windows.zip KalyanaKathal.exe
+
+      - name: Upload browser build
+        uses: actions/upload-artifact@v4
+        with:
+          name: KalyanaKathal-Web
+          path: build/web/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: KalyanaKathal-Windows
+          path: build/KalyanaKathal-Windows.zip
+          if-no-files-found: error
+          retention-days: 30
