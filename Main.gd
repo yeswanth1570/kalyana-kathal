@@ -35,6 +35,11 @@ const CONTROL_RETRY := Rect2(330, 282, 364, 46)
 func _ready() -> void:
     font = ThemeDB.fallback_font
     get_window().title = "Kalyana Kathal — College Corridor"
+    get_viewport().size_changed.connect(_on_viewport_size_changed)
+    queue_redraw()
+
+func _on_viewport_size_changed() -> void:
+    queue_redraw()
 
 func _process(delta: float) -> void:
     age += delta
@@ -269,7 +274,6 @@ func draw_oval(center: Vector2, radius: Vector2, color: Color) -> void:
         var a := TAU * i / 24.0
         points.append(center + Vector2(cos(a)*radius.x, sin(a)*radius.y))
     draw_colored_polygon(points, color)
-
 
 
 
