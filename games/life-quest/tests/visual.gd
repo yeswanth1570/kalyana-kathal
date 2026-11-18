@@ -52,10 +52,22 @@ func run() -> void:
 	game.stage=0
 	game._start_stage()
 	await capture("stealth-portrait")
+	game.player.x=game._stage_width()-110
+	game.master_x=game.player.x-120
+	game.awareness=43.0
+	game.face_frame=0
+	game.face_time=0.5
+	game._follow_camera(1.0)
+	game._update_hud()
+	await capture("scroll-reaction-portrait")
+	game._start_stage()
 	game.player.x=game._cover_positions()[1]
 	game.held["hide"]=true
 	game._tick(.016)
+	game._update_hud()
 	await capture("hidden-portrait")
+	game._use_activity()
+	await capture("grades-portrait")
 	root.size=Vector2i(1100,700)
 	await process_frame
 	game._resize()
@@ -75,6 +87,9 @@ func run() -> void:
 	await capture("motion-throw")
 	game.windup=.5
 	await capture("attack-warning")
+	game._impact(game.boss_position()+Vector2(-35,-67),"POW!")
+	game.boss_flash=0.1
+	await capture("impact-landscape")
 	game.queue_free()
 	await process_frame
 	quit()

@@ -6,6 +6,7 @@ const COVER: Texture2D = preload("res://art/cover-v2.png")
 const HERO_SHEET: Texture2D = preload("res://art/hero_sheet-v2.png")
 const HERO_RUN: Texture2D = preload("res://art/hero-run-alpha-v3.png")
 const MASTER_WALK: Texture2D = preload("res://art/master-walk-v3.png")
+const REACTION_FACES: Texture2D = preload("res://art/reaction-faces-v5.png")
 const CAST_SHEET: Texture2D = preload("res://art/cast_sheet-v2.png")
 const SCENERY: Array[Texture2D] = [preload("res://art/school-v2.png"),preload("res://art/college-v2.png"),preload("res://art/office-v2.png"),preload("res://art/family-v2.png"),preload("res://art/wedding-v2.png")]
 const INK := Color("203936")
@@ -14,7 +15,13 @@ const GOLD := Color("dca74e")
 const ROSE := Color("bf505e")
 const TEAL := Color("347c75")
 const SAVE := "user://life-quest.cfg"
+const SCHOOL_SCROLL := 560.0
 const THRESHOLDS := [70.0, 40.0, 12.0]
+const ACTIVITIES := {
+	0: {"name":"GRADE DESK", "action":"Collect grades", "reward":"Honor pass · slower detection"},
+	1: {"name":"GYM BENCH", "action":"Train", "reward":"Gym strength · faster dash recovery"},
+	3: {"name":"BARBER CHAIR", "action":"Get a haircut", "reward":"Fresh cut · +40 charm"}
+}
 
 var state := "title"
 var previous_state := "title"
@@ -40,6 +47,14 @@ var shot_clock := 0.0
 var attack_pose := 0.0
 var landing_pose := 0.0
 var run_cycle := 0.0
+var camera_x := 0.0
+var impact_position := Vector2.ZERO
+var impact_text := ""
+var impact_time := 0.0
+var face_frame := 0
+var face_time := 0.0
+var activity_claimed := false
+var activity_button: Button
 var windup := 0.0
 var master_x := 0.0
 var master_facing := 1.0
@@ -182,13 +197,24 @@ func floor_y() -> float:
 func boss_position() -> Vector2:
 	return Vector2(master_x if stage == 0 else viewport_size.x - 150, floor_y())
 
+func _stage_width() -> float:
+	return viewport_size.x + SCHOOL_SCROLL if stage == 0 else viewport_size.x
+
+func _follow_camera(dt: float) -> void:
+	if stage != 0:
+		camera_x = 0.0
+		return
+	var target := clampf(player.x - viewport_size.x * 0.44, 0.0, SCHOOL_SCROLL)
+	camera_x = target if reduce_motion else lerpf(camera_x,target,1.0-exp(-12.0*dt))
+
 func _resize() -> void:
 	var old_floor := floor_y()
 	viewport_size = get_viewport_rect().size
 	portrait = viewport_size.y > viewport_size.x
 	ui_scale = 2.0 if portrait else 1.0
-	player.x = clampf(player.x, 50, viewport_size.x - (55 if stage == 0 else 290))
-	master_x = clampf(master_x, viewport_size.x * 0.40, viewport_size.x * 0.80)
+	player.x = clampf(player.x, 48, _stage_width() - (55 if stage == 0 else 295))
+	master_x = clampf(master_x, viewport_size.x * 0.40, _stage_width() - 220)
+	camera_x = clampf(player.x - viewport_size.x * 0.44,0.0,SCHOOL_SCROLL) if stage == 0 else 0.0
 	player.y = floor_y() + minf(player.y - old_floor, 0)
 	shots.clear()
 	hazards.clear()
@@ -415,6 +441,13 @@ func _start_stage() -> void:
 	attack_pose = 0
 	landing_pose = 0
 	run_cycle = 0
+	camera_x = 0.0
+	face_time = 0.0
+	activity_claimed = false
+	impact_time = 0.0
+	flashes = 0.0
+	boss_flash = 0.0
+	shake = 0.0
 	windup = 0
 	master_x = viewport_size.x * 0.57
 	master_facing = 1
@@ -511,6 +544,31 @@ func _make_hud() -> void:
 		var actions := ["left", "right", "dash", "sneak", "hide"]
 		for i in range(actions.size()):
 			control_rects[actions[i]] = Rect2(22+i*(cell_width+8), y, cell_width, h)
+	if ACTIVITIES.has(stage):
+		activity_button = _button(hud, ACTIVITIES[stage].action + " [E]", _use_activity, true)
+		_compact_button(activity_button)
+		activity_button.focus_mode = Control.FOCUS_NONE
+		activity_button.hide()
+	_update_hud()
+
+func _activity_position() -> Vector2:
+	var x := _cover_positions()[1] if stage == 0 else viewport_size.x * 0.46
+	return Vector2(x,floor_y())
+
+func _near_activity() -> bool:
+	return state == "playing" and ACTIVITIES.has(stage) and not activity_claimed and player.distance_to(_activity_position()) <= 92.0
+
+func _use_activity() -> void:
+	if not _near_activity(): return
+	activity_claimed = true
+	if stage == 1: dash_cooldown = minf(dash_cooldown,0.55)
+	if stage == 3: charm = minf(100.0,charm+40.0)
+	face_frame = 2
+	face_time = 0.8
+	notice = ACTIVITIES[stage].reward
+	notice_time = 3.2
+	_burst(_activity_position()+Vector2(0,-75),GOLD,18)
+	_sound("parry")
 	_update_hud()
 
 func _compact_button(button: Button) -> void:
@@ -526,9 +584,14 @@ func _compact_button(button: Button) -> void:
 
 func _update_hud() -> void:
 	if not is_instance_valid(hud): return
+	if is_instance_valid(activity_button):
+		activity_button.visible = _near_activity()
+		if activity_button.visible:
+			var pos := _activity_position()
+			activity_button.position = Vector2(pos.x-camera_x-activity_button.size.x/2,pos.y-128*ui_scale)
 	hp_label.text = "MURUGAN   ·   HP %d / %d" % [hp, max_hp]
 	if stage == 0:
-		progress_label.text = "ACT 01 / 05   ·   DELIVER THE NOTE  →  GATE"
+		progress_label.text = "ACT 01 / 05   ·   CARRY THE NOTE TO THE GATE"
 		resistance_bar.value = awareness
 		resistance_bar.add_theme_stylebox_override("fill", _style(ROSE if awareness > 60 else GOLD, GOLD, 4))
 		status_label.text = "HIDDEN · wait for him to turn" if hidden_in_cover else ("Spotted! Find cover!" if awareness > 5 else "Hold HIDE near carts · SNEAK between patrols")
@@ -566,6 +629,8 @@ func _tick(dt: float) -> void:
 	attack_pose = maxf(0, attack_pose-dt)
 	landing_pose = maxf(0, landing_pose-dt)
 	notice_time = maxf(0, notice_time-dt)
+	impact_time = maxf(0, impact_time-dt)
+	face_time = maxf(0, face_time-dt)
 	var axis := 0.0
 	if _held("left") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): axis -= 1
 	if _held("right") or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): axis += 1
@@ -576,7 +641,7 @@ func _tick(dt: float) -> void:
 		if int(age * 50) % 3 == 0: _burst(player + Vector2(0,-35), TEAL, 1)
 	else:
 		player.x += axis * (125 if stage == 0 and _sneaking() else 270) * dt
-	player.x = clampf(player.x, 48, viewport_size.x - (55 if stage == 0 else 295))
+	player.x = clampf(player.x, 48, _stage_width() - (55 if stage == 0 else 295))
 	run_cycle += absf(player.x-old_x) / 30.0
 	if player.y < floor_y() or velocity.y < 0:
 		velocity.y += 1250 * dt
@@ -588,6 +653,7 @@ func _tick(dt: float) -> void:
 			_burst(player, Color("d5c8a8"), 4)
 	if stage == 0:
 		_tick_stealth(dt)
+		_follow_camera(dt)
 		_update_hud()
 		return
 	if (auto_fire or _held("fire") or Input.is_physical_key_pressed(KEY_J) or Input.is_physical_key_pressed(KEY_X)) and shot_clock <= 0:
@@ -608,7 +674,9 @@ func _tick(dt: float) -> void:
 			resistance = maxf(0, resistance - 3.5)
 			boss_flash = 0.10
 			charm = minf(100, charm + 2)
-			_burst(bullet.p, ROSE, 5)
+			_burst(bullet.p, ROSE, 8)
+			_impact(bullet.p, "POW!")
+			if not reduce_motion: shake = maxf(shake, 2.4)
 			shots.remove_at(i)
 		elif bullet.p.x > viewport_size.x + 30 or bullet.p.x < -30 or bullet.p.y < -40 or bullet.p.y > viewport_size.y:
 			shots.remove_at(i)
@@ -627,6 +695,10 @@ func _tick(dt: float) -> void:
 				charm = minf(100, charm + 34)
 				invincible = maxf(invincible, 0.25)
 				_burst(hazard.p, GOLD, 14)
+				_impact(hazard.p, "PARRY!")
+				face_frame = 2
+				face_time = 0.65
+				if player.y < floor_y() - 1: velocity.y = -310.0
 				_sound("parry")
 				hazards.remove_at(i)
 				continue
@@ -644,7 +716,10 @@ func _sneaking() -> bool:
 	return _held("sneak") or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
 
 func _cover_positions() -> Array[float]:
-	return [viewport_size.x * 0.25, viewport_size.x * 0.48, viewport_size.x * 0.72]
+	return [
+		viewport_size.x * 0.25, viewport_size.x * 0.48, viewport_size.x * 0.72,
+		viewport_size.x + 45, _stage_width() - 240
+	]
 
 func _tick_stealth(dt: float) -> void:
 	caught_timer = maxf(0, caught_timer-dt)
@@ -658,18 +733,24 @@ func _tick_stealth(dt: float) -> void:
 		if master_turn <= 0: master_facing *= -1
 	else:
 		master_x += master_facing * 78 * dt
-		if master_x >= viewport_size.x*0.80 or master_x <= viewport_size.x*0.40:
-			master_x = clampf(master_x, viewport_size.x*0.40, viewport_size.x*0.80)
+		if master_x >= _stage_width()-220 or master_x <= viewport_size.x*0.40:
+			master_x = clampf(master_x, viewport_size.x*0.40, _stage_width()-220)
 			master_turn = 1.25
 	var distance := player.x-master_x
 	var visible := not hidden_in_cover and ((distance*master_facing > 0 and absf(distance) < 300) or absf(distance)<52)
+	var previous_awareness := awareness
 	if caught_timer <= 0:
 		var detection_rate := 22.0 if _sneaking() and dash_time <= 0 else 62.0
+		if activity_claimed: detection_rate *= 0.75
 		awareness = clampf(awareness + (detection_rate if visible else -38.0)*dt, 0, 100)
+	if previous_awareness < 35.0 and awareness >= 35.0:
+		face_frame = 0
+		face_time = 0.65
 	if awareness >= 100 and invincible <= 0:
 		_take_hit()
 		if state != "playing": return
 		player = Vector2(80, floor_y())
+		camera_x = 0.0
 		velocity = Vector2.ZERO
 		dash_time = 0
 		awareness = 0
@@ -677,7 +758,7 @@ func _tick_stealth(dt: float) -> void:
 		notice = "Caught! One heart lost · try the patrol gap"
 		notice_time = 2.5
 		_clear_input()
-	if player.x >= viewport_size.x-75 and awareness < 80:
+	if player.x >= _stage_width()-75 and awareness < 80:
 		_clear_stage()
 
 func _fire() -> void:
@@ -735,7 +816,7 @@ func _jump() -> void:
 func _dash() -> void:
 	if state == "playing" and dash_cooldown <= 0:
 		dash_time = 0.22
-		dash_cooldown = 1.0
+		dash_cooldown = 0.55 if stage == 1 and activity_claimed else 1.0
 		invincible = maxf(invincible, 0.26)
 		_sound("letter")
 
@@ -758,6 +839,8 @@ func _take_hit() -> void:
 	invincible = 1.35 if gentle else 1.0
 	shake = 5 if not reduce_motion else 0
 	flashes = 0.18
+	face_frame = 1
+	face_time = 0.7
 	_burst(player+Vector2(0,-40), ROSE, 10)
 	_sound("hit")
 	if hp <= 0:
@@ -1073,7 +1156,7 @@ func _show_help() -> void:
 	_label(col,"A little action. A lot of heart.",36)
 	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nHold LETTER to throw; auto letters are optional in Settings. Multiple fingers work together.",23)
 	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · Type freely to talk to the Qwen character",21)
-	_label(col,"SCHOOL: reach the gate unseen. Hold HIDE / K at carts.\nHold SNEAK / S to move quietly; watch the master’s turning cue.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.",23)
+	_label(col,"SCHOOL: reach the gate unseen. Hold HIDE / K at carts.\nHold SNEAK / S to move quietly; watch the master’s turning cue.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
 	_label(col,"A short dash makes you invincible. A tiffin heals once per act.\nOn a phone, landscape gives you more room to dodge.",21,Color("b9cbb6"))
 	_button(col,"Got it  >",_settings_back,true).grab_focus()
 
@@ -1141,6 +1224,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_J, KEY_X: _action("fire")
 			KEY_SHIFT: _dash()
 			KEY_K: _parry()
+			KEY_E: _use_activity()
 			KEY_H: _heal()
 			KEY_R: _manual_talk()
 
@@ -1156,22 +1240,61 @@ func _update_particles(dt: float) -> void:
 		particles[i].life -= dt
 		if particles[i].life <= 0: particles.remove_at(i)
 
+func _impact(pos: Vector2, caption: String) -> void:
+	impact_position = pos
+	impact_text = caption
+	impact_time = 0.30
+
+func _draw_impact(offset: Vector2) -> void:
+	var progress := 1.0-impact_time/0.30
+	var center := impact_position + offset + Vector2(-48,-35)
+	center.x = clampf(center.x, 74, viewport_size.x-74)
+	var stretch := 1.0 if reduce_motion else lerpf(0.78,1.13,minf(progress*4.0,1.0))
+	var shape: Array[Vector2] = []
+	for i in range(24):
+		var angle := TAU*i/24.0
+		var radius := 1.15 if i%2==0 else 0.74
+		shape.append(center+Vector2(cos(angle)*64,sin(angle)*37)*radius*stretch)
+	_polygon(shape,Color("ffca76") if impact_text=="POW!" else Color("ff98ba"))
+	var label_size := 31 if impact_text=="POW!" else 24
+	_text(impact_text,center+Vector2(0,10),label_size,INK,true)
+
+func _draw_reaction(target: Vector2, frame: int, side: float, accent: Color) -> void:
+	var radius := 48.0 if portrait else 35.0
+	var center := target + Vector2(side*radius*1.38, -(246.0 if portrait else 166.0))
+	center.x = clampf(center.x,radius+6.0,viewport_size.x-radius-6.0)
+	var point := Vector2(target.x,target.y-(208.0 if portrait else 144.0))
+	_polygon([point,center+Vector2(-19,19),center+Vector2(19,19)],PAPER)
+	draw_circle(center,radius+3,INK,true)
+	draw_circle(center,radius,PAPER,true)
+	draw_arc(center,radius-3,0,TAU,32,accent,2,true)
+	var cell := REACTION_FACES.get_size()/2.0
+	var origin := Vector2(frame%2,frame/2)*cell+Vector2(3,3)
+	var face_region := Rect2(origin,cell-Vector2(6,6))
+	var face_size := Vector2.ONE*radius*1.54
+	draw_texture_rect_region(REACTION_FACES,Rect2(center-face_size/2,face_size),face_region)
+
 func _draw() -> void:
 	if font == null: return
 	var wobble := Vector2(sin(age*78)*shake,cos(age*69)*shake) if not reduce_motion else Vector2.ZERO
 	draw_set_transform(wobble)
 	_background()
+	var world_offset := wobble - Vector2(camera_x,0)
+	draw_set_transform(world_offset)
 	if stage == 0 and state == "playing": _draw_stealth_scene()
+	draw_set_transform(Vector2.ZERO)
 	if state != "title":
 		var animate := state == "playing" and (_held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT))
 		var actor_scale := 1.55 if portrait else 1.0
-		_character(player,"hero",actor_scale,animate)
+		_character(player+world_offset,"hero",actor_scale,animate)
 		var kind: String = ["teacher","senior","manager","father","aunty"][stage]
-		_character(boss_position(),kind,actor_scale,stage == 0 and state == "playing" and master_turn <= 0)
-		if stage == 3: _character(boss_position()+Vector2(87,0),"aunty",actor_scale*0.85,false)
+		_character(boss_position()+world_offset,kind,actor_scale,stage == 0 and state == "playing" and master_turn <= 0)
+		if stage == 3: _character(boss_position()+world_offset+Vector2(87,0),"aunty",actor_scale*0.85,false)
 		if stage == 1 or stage == 4:
-			_character(boss_position()+Vector2(94,0),"sharmila",actor_scale*0.85,false)
+			_character(boss_position()+world_offset+Vector2(94,0),"sharmila",actor_scale*0.85,false)
+	draw_set_transform(world_offset)
 	if stage == 0 and state == "playing": _draw_cover_props()
+	if state == "playing" and ACTIVITIES.has(stage): _draw_activity()
 	if windup > 0 and state == "playing":
 		var cue := boss_position()+Vector2(0,-205* (1.3 if portrait else 1.0))
 		draw_circle(cue,24,GOLD)
@@ -1185,6 +1308,19 @@ func _draw() -> void:
 		var color: Color = particle.color
 		color.a = minf(1,particle.life*2)
 		draw_rect(Rect2(particle.p,Vector2(5,5)),color)
+	draw_set_transform(Vector2.ZERO)
+	if state == "playing":
+		if impact_time > 0: _draw_impact(world_offset)
+		var master_alert := stage == 0 and awareness >= 35.0
+		var reaction_side := -facing
+		if master_alert and absf(player.x-master_x) < 260:
+			reaction_side = 1.0 if player.x > master_x else -1.0
+		if face_time > 0:
+			_draw_reaction(player+world_offset,face_frame,reaction_side,ROSE if face_frame!=2 else GOLD)
+		if master_alert:
+			var master_screen := boss_position()+world_offset
+			if master_screen.x >= 0 and master_screen.x <= viewport_size.x:
+				_draw_reaction(master_screen,3,-reaction_side if face_time > 0 else master_facing,GOLD)
 	# Film perforations and subtle texture make the world feel like a printed reel.
 	for x in range(10,int(viewport_size.x),36):
 		draw_rect(Rect2(x,4,17,7),Color(0.06,0.12,0.10,0.65))
@@ -1213,9 +1349,17 @@ func _background() -> void:
 	var texture: Texture2D = SCENERY[stage]
 	var size := texture.get_size()
 	var g := floor_y()
-	var scale_value := maxf(w/size.x,(g-230.0)/(size.y*0.82))
+	# Scenery travels more slowly than carts, actors and the gate.
+	var drift := 0.0 if reduce_motion else 68.0
+	var travel := SCHOOL_SCROLL*0.6 if stage == 0 else drift
+	var scale_value := maxf((w+travel)/size.x,(g-230.0)/(size.y*0.82))
 	var image_size := size*scale_value
-	var point := Vector2((w-image_size.x)/2,g-image_size.y*0.82)
+	var x := (w+travel-image_size.x)/2
+	if stage == 0:
+		x -= camera_x*0.6
+	else:
+		x -= drift*clampf(player.x/maxf(1.0,w-295.0),0.0,1.0)
+	var point := Vector2(x,g-image_size.y*0.82)
 	draw_rect(Rect2(0,0,w,h),Color("283f34"))
 	draw_texture_rect(texture,Rect2(point,image_size),false)
 	# Atmospheric pools of light and an inked stage apron separate controls from art.
@@ -1303,6 +1447,29 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 	draw_texture_rect_region(tex,destination,source,tint)
 	draw_set_transform(Vector2.ZERO)
 
+func _draw_activity() -> void:
+	var base := _activity_position()
+	var sign_center := base + Vector2(0,-152 if stage == 0 else -98)
+	var sign := Rect2(sign_center-Vector2(73,40),Vector2(146,80))
+	draw_style_box(_style(Color("273d3a"),GOLD if not activity_claimed else TEAL,14),sign)
+	var mark := sign_center+Vector2(0,-10)
+	if activity_claimed:
+		draw_polyline(PackedVector2Array([mark+Vector2(-14,0),mark+Vector2(-4,10),mark+Vector2(15,-12)]),GOLD,4,true)
+	else:
+		match stage:
+			0:
+				draw_style_box(_style(PAPER,INK,2),Rect2(mark-Vector2(22,15),Vector2(44,31)))
+				_text("A+",mark+Vector2(0,9),23,INK,true)
+			1:
+				draw_line(mark-Vector2(24,0),mark+Vector2(24,0),PAPER,5,true)
+				for x in [-19,19]:
+					draw_rect(Rect2(mark+Vector2(x-5,-12),Vector2(10,24)),GOLD)
+			3:
+				for y in [-7,7]:
+					draw_arc(mark+Vector2(-10,y),6,0,TAU,16,GOLD,3,true)
+					draw_line(mark+Vector2(-6,y),mark+Vector2(17,-y),PAPER,3,true)
+	_text(ACTIVITIES[stage].name,sign_center+Vector2(0,27),15,PAPER,true)
+
 func _draw_stealth_scene() -> void:
 	var eye := boss_position()+Vector2(0,-112)
 	var color := Color(1.0,0.93,0.65,0.30) if awareness < 60 else Color(0.85,0.22,0.24,0.35)
@@ -1312,7 +1479,7 @@ func _draw_stealth_scene() -> void:
 	draw_line(eye,eye+Vector2(master_facing*300,-80),GOLD,2,true)
 	var cue := boss_position()+Vector2(0,-205*(1.3 if portrait else 1.0))
 	_text("TURNING…" if master_turn > 0 else ("!" if awareness > 5 else "PATROL"),cue,22,ROSE if awareness > 60 else PAPER,true)
-	var gate := Vector2(viewport_size.x-60,floor_y())
+	var gate := Vector2(_stage_width()-60,floor_y())
 	draw_style_box(_style(Color("224c42"),GOLD,14),Rect2(gate+Vector2(-38,-175),Vector2(76,170)))
 	_text("EXIT",gate+Vector2(0,-133),19,PAPER,true)
 	var arrow := gate + Vector2(0,-99)

@@ -68,6 +68,7 @@ func run() -> void:
 	game.shots.clear()
 	game.shots.append({"p":game.boss_position()+Vector2(-40,-62),"v":Vector2(660,0)})
 	game._tick(0.016)
+	check(game.impact_text=="POW!" and game.impact_time>0,"Letter contact triggers a visible impact burst")
 	check(game.resistance<100,"Projectile hit reduces resistance")
 	game.resistance=70
 	game._tick(0.016)
@@ -131,7 +132,7 @@ func run() -> void:
 			check(not Story.ACTS[act].talks[p].q.is_empty(),"Act %d phase %d has grounded scene context"%[act+1,p+1])
 		game._start_stage()
 		if act == 0:
-			game.player.x = game.viewport_size.x-65
+			game.player.x = game._stage_width()-65
 			game._tick(.016)
 		for p in range(0 if act == 0 else 3):
 			game.resistance=game.THRESHOLDS[p]
@@ -259,19 +260,39 @@ func run() -> void:
 	game._action("fire")
 	check(game.shots.size()==1,"Rapid taps respect throw cooldown")
 	game.stage=0
+	game._start_stage()
+	game._use_activity()
+	check(not game.activity_claimed,"Activities require approaching the marked stop")
+	game.player = game._activity_position()
+	game._use_activity()
+	check(game.activity_claimed and game.notice.begins_with("Honor pass"),"School allows collecting good grades from the grade desk")
+	game.stage=1
+	game._start_stage()
+	game.player = game._activity_position()
+	game._use_activity()
+	game._dash()
+	check(is_equal_approx(game.dash_cooldown,.55),"Gym training shortens dash recovery")
+	game.stage=3
+	game._start_stage()
+	game.player = game._activity_position()
+	game._use_activity()
+	game._use_activity()
+	check(game.charm==40 and game.activity_claimed,"Haircut can award charm once per attempt")
+	game.stage=0
 	# Traverse the real patrol: hide at the middle cart, let him pass, then exit.
 	game._start_stage()
 	var hiding := false
 	var escaping := false
 	var stealth_frames := 0
-	while game.state=="playing" and stealth_frames<1500:
+	while game.state=="playing" and stealth_frames<3000:
 		stealth_frames+=1
 		if not hiding and game.player.x>=game._cover_positions()[1]-5:
 			hiding=true
-		if hiding and game.master_x<470 and game.master_facing<0: escaping=true
+		if hiding and game.master_x<=game._cover_positions()[1]-65 and game.master_facing<0: escaping=true
 		game.held["right"]=not hiding or escaping
 		game.held["hide"]=hiding and not escaping
 		game._tick(1.0/60)
+	check(game.camera_x>0 and game.camera_x<=game.SCHOOL_SCROLL,"School camera follows through the extended corridor and stops at its boundary")
 	check(game.state=="clear" and game.hp==game.max_hp,"School can be cleared through real patrol movement and hiding without damage")
 	check(game.control_rects.has("hide") and not game.control_rects.has("fire"),"School touch controls expose stealth actions")
 	game.qwen.cancel()
