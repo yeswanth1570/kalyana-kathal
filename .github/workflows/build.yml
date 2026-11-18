@@ -48,6 +48,7 @@ jobs:
         run: |
           set -o pipefail
           godot --headless --path games/life-quest --script res://tests/gameplay.gd 2>&1 | tee life-quest-tests.log
+          godot --headless --path games/life-quest --script res://tests/art.gd 2>&1 | tee -a life-quest-tests.log
           if grep -E 'SCRIPT ERROR:|^ERROR:' life-quest-tests.log; then exit 1; fi
 
       - name: Export browser build
@@ -56,10 +57,14 @@ jobs:
       - name: Export Life Quest mobile browser game
         run: |
           mkdir -p build/web/life-quest
-          godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/index.html
+          godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/game-v2.html
+          cp build/web/life-quest/game-v2.html build/web/life-quest/index.html
 
       - name: Copy mobile conversation UI
-        run: cp games/life-quest/web/chat.js games/life-quest/web/chat.css build/web/life-quest/
+        run: |
+          cp games/life-quest/web/chat.js games/life-quest/web/chat.css build/web/life-quest/
+          cp games/life-quest/art/cover-v2.png build/web/life-quest/
+          cp games/life-quest/fonts/CinzelDecorative-Bold.ttf games/life-quest/fonts/CinzelDecorative-OFL.txt build/web/life-quest/
 
       - name: Verify exported games
         run: |
@@ -67,8 +72,8 @@ jobs:
           test -s build/web/life-quest/index.html
           test -s build/web/life-quest/chat.js
           test -s build/web/life-quest/chat.css
-          test -s build/web/life-quest/index.pck
-          test -s build/web/life-quest/index.wasm
+          test -s build/web/life-quest/game-v2.pck
+          test -s build/web/life-quest/game-v2.wasm
           if grep -q '\$GODOT_' build/web/life-quest/index.html; then exit 1; fi
           touch build/web/.nojekyll
 

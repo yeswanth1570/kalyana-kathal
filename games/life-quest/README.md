@@ -6,7 +6,7 @@ Play at **https://yeswanth1570.github.io/kalyana-kathal/life-quest/**. Tap Play,
 
 ## What is playable
 
-Five complete encounters: School, College, Office, Family and Wedding. Each has a setting, character art, different projectiles, three conversations, consequences for replies, a recoverable trust loop, a stage ending and an unlockable next act. Murugan changes outfits as the story advances. Jump, dash with a cooldown, parry pink petals, throw letters, use one healing tiffin, and pause at any time. Original drawn vector art, character animation, confetti and music are included.
+Five complete encounters: School, College, Office, Family and Wedding. Each has a setting, character art, different projectiles, three conversations, consequences for replies, a recoverable trust loop, a stage ending and an unlockable next act. Murugan changes outfits as the story advances. Jump, dash with a cooldown, parry pink petals, throw letters, use one healing tiffin, and pause at any time. The v2 art pass adds painted stage scenery, a cinematic cover, transparent character atlases with four outfits and walking/throwing frames, illustrated scene thumbnails, updated typography and touch icons. Confetti and original music are included. The previous procedural art remains in the source as a fallback. See [art direction and prompts](art/README.md).
 
 Auto fire and Gentle mode are enabled by default. Change them in Settings. Reduce Motion disables shake and film texture animation. Progress and settings save locally; clearing browser site data resets them. Replay unlocked acts from the selection menu.
 
@@ -45,7 +45,7 @@ This remains a small game rather than the full 20-week production in the brief. 
 
 ## Local development
 
-Open this directory's `project.godot` with Godot 4.7.2 and press F5. No external Python or npm packages are needed. Live character chat requires the separately running PC API described above. Audio files are checked in; `python make_audio.py` regenerates the original synthesized WAVs. The Noto Sans Tamil font is distributed under its included SIL Open Font License.
+Open this directory's `project.godot` with Godot 4.7.2 and press F5. No external Python or npm packages are needed. Live character chat requires the separately running PC API described above. Audio files are checked in; `python make_audio.py` regenerates the original synthesized WAVs. The Noto Sans Tamil and Cinzel Decorative fonts are distributed under their included SIL Open Font Licenses.
 
 Run meaningful logic and completion tests:
 

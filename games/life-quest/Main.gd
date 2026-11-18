@@ -1,6 +1,11 @@
 extends Node2D
 
 const Story = preload("res://Stages.gd")
+const DISPLAY_FONT: Font = preload("res://fonts/CinzelDecorative-Bold.ttf")
+const COVER: Texture2D = preload("res://art/cover-v2.png")
+const HERO_SHEET: Texture2D = preload("res://art/hero_sheet-v2.png")
+const CAST_SHEET: Texture2D = preload("res://art/cast_sheet-v2.png")
+const SCENERY: Array[Texture2D] = [preload("res://art/school-v2.png"),preload("res://art/college-v2.png"),preload("res://art/office-v2.png"),preload("res://art/family-v2.png"),preload("res://art/wedding-v2.png")]
 const INK := Color("203936")
 const PAPER := Color("f6e9cf")
 const GOLD := Color("dca74e")
@@ -84,6 +89,7 @@ var viewport_size := Vector2(1100, 700)
 var portrait := false
 var ui_scale := 1.0
 var rng := RandomNumberGenerator.new()
+var paint_styles: Dictionary = {}
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
@@ -211,11 +217,17 @@ func _apply_theme() -> void:
 	root.theme = theme
 
 func _style(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
+	var key := "%s/%s/%d" % [bg.to_html(),border.to_html(),radius]
+	if paint_styles.has(key): return paint_styles[key]
 	var box := StyleBoxFlat.new()
 	box.bg_color = bg
 	box.border_color = border
 	box.set_border_width_all(2)
 	box.set_corner_radius_all(radius)
+	box.shadow_color = Color(0.02,0.08,0.06,0.30)
+	box.shadow_size = 5
+	box.shadow_offset = Vector2(0,4)
+	paint_styles[key] = box
 	return box
 
 func _clear_screen() -> void:
@@ -247,7 +259,7 @@ func _modal(width: float = 850.0) -> VBoxContainer:
 	screen.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.x = viewport_size.x - 60 if portrait else minf(width, viewport_size.x - 60)
-	panel.add_theme_stylebox_override("panel", _style(INK, Color("7d8a68"), 20))
+	panel.add_theme_stylebox_override("panel", _style(Color(0.07,0.16,0.14,0.96), Color("b99b61"), 20))
 	center.add_child(panel)
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -275,7 +287,12 @@ func _button(parent: Node, title: String, callback: Callable, primary: bool = fa
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	if primary:
-		button.add_theme_stylebox_override("normal", _style(ROSE, Color("e38f85"), 14))
+		var main_style := _style(ROSE, Color("e38f85"), 14)
+		main_style.content_margin_left = 22
+		main_style.content_margin_right = 22
+		main_style.content_margin_top = 16*ui_scale
+		main_style.content_margin_bottom = 16*ui_scale
+		button.add_theme_stylebox_override("normal", main_style)
 	button.pressed.connect(callback)
 	parent.add_child(button)
 	return button
@@ -292,7 +309,7 @@ func _show_title() -> void:
 	var panel := PanelContainer.new()
 	panel.position = Vector2(54, 46 if not portrait else 130)
 	panel.size = Vector2(viewport_size.x - 108 if portrait else minf(600, viewport_size.x - 108), 0)
-	panel.add_theme_stylebox_override("panel", _style(Color(0.09,0.21,0.20,0.94), Color("bc9b60"), 20))
+	panel.add_theme_stylebox_override("panel", _style(Color(0.055,0.15,0.14,0.78), Color("bc9b60"), 20))
 	screen.add_child(panel)
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -302,7 +319,7 @@ func _show_title() -> void:
 	col.add_theme_constant_override("separation", int(12 * ui_scale))
 	margin.add_child(col)
 	_label(col, "A TAMIL CINEMA ADVENTURE", 18, GOLD)
-	_label(col, "KALYANA\nKATHAL", 62 if portrait else 52, PAPER)
+	_label(col, "KALYANA\nKATHAL", 58 if portrait else 49, PAPER).add_theme_font_override("font",DISPLAY_FONT)
 	_label(col, "T H E   L I F E   Q U E S T", 19, Color("a9c8b8"))
 	_label(col, "Dodge the drama. Find the words.\nFrom a folded note to forever.", 23)
 	var play := _button(col, "Choose your act  >" if unlocked > 0 else "Let the story begin  >", _show_map, true)
@@ -330,6 +347,12 @@ func _show_map() -> void:
 		var title := "%02d   %s   ·   %s" % [i + 1, act.name, act.year]
 		if not unlocked_act: title += "  [locked]"
 		var button := _button(col, title, _select_act.bind(i), i == unlocked)
+		button.icon = SCENERY[i]
+		button.expand_icon = true
+		button.add_theme_constant_override("icon_max_width",int(86*ui_scale))
+		button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.disabled = not unlocked_act
 		button.add_theme_font_size_override("font_size", int(22 * ui_scale))
 	_label(col, "Replay any unlocked act. New acts unlock when you clear the last.", 18, Color("b9c9b8"))
@@ -394,24 +417,25 @@ func _make_hud() -> void:
 	top.add_theme_stylebox_override("panel", _style(Color(0.10,0.23,0.21,0.95), Color("8e916a"), 16))
 	hud.add_child(top)
 	var margin := MarginContainer.new()
-	for side in ["left", "right", "top", "bottom"]: margin.add_theme_constant_override("margin_" + side, 16)
+	for side in ["left", "right", "top", "bottom"]: margin.add_theme_constant_override("margin_" + side, 12)
 	top.add_child(margin)
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 8)
+	col.add_theme_constant_override("separation", 6)
 	margin.add_child(col)
 	var line := _row(col)
-	hp_label = _label(line, "", 23, PAPER)
+	hp_label = _label(line, "", 20, PAPER)
 	var pause_button := _button(line, "II  Pause", _pause)
 	pause_button.custom_minimum_size = Vector2(155 * ui_scale, 0)
 	pause_button.size_flags_horizontal = Control.SIZE_SHRINK_END
-	progress_label = _label(col, "", 17, GOLD)
-	boss_label = _label(col, Story.ACTS[stage].boss.to_upper() + "  /  RESISTANCE", 17, Color("d7c9b3"))
+	_compact_button(pause_button)
+	progress_label = _label(col, "", 14, GOLD)
+	boss_label = _label(col, Story.ACTS[stage].boss.to_upper() + "  /  RESISTANCE", 14, Color("d7c9b3"))
 	resistance_bar = ProgressBar.new()
-	resistance_bar.custom_minimum_size.y = 14 * ui_scale
+	resistance_bar.custom_minimum_size.y = 12 * ui_scale
 	resistance_bar.show_percentage = false
 	col.add_child(resistance_bar)
 	charm_bar = ProgressBar.new()
-	charm_bar.custom_minimum_size.y = 8 * ui_scale
+	charm_bar.custom_minimum_size.y = 6 * ui_scale
 	charm_bar.show_percentage = false
 	charm_bar.add_theme_stylebox_override("fill", _style(GOLD, GOLD, 4))
 	col.add_child(charm_bar)
@@ -421,6 +445,8 @@ func _make_hud() -> void:
 	heal_button = _button(tools, "Tiffin +2 HP [H]", _heal)
 	talk_button = _button(tools, "Speak · fill gold meter [R]", _manual_talk)
 	talk_button.disabled = true
+	_compact_button(heal_button)
+	_compact_button(talk_button)
 	status_label = Label.new()
 	status_label.position = Vector2(28, floor_y() + 28)
 	status_label.size = Vector2(viewport_size.x - 56, 48 * ui_scale)
@@ -438,6 +464,17 @@ func _make_hud() -> void:
 		"fire": Rect2(viewport_size.x-b-22,y,b,h)
 	}
 	_update_hud()
+
+func _compact_button(button: Button) -> void:
+	button.custom_minimum_size.y = 42*ui_scale
+	button.add_theme_font_size_override("font_size",int(18*ui_scale))
+	for key in ["normal","hover","pressed","focus","disabled"]:
+		var style := button.get_theme_stylebox(key).duplicate() as StyleBoxFlat
+		style.content_margin_top = 8*ui_scale
+		style.content_margin_bottom = 8*ui_scale
+		style.content_margin_left = 12
+		style.content_margin_right = 12
+		button.add_theme_stylebox_override(key,style)
 
 func _update_hud() -> void:
 	if not is_instance_valid(hud): return
@@ -534,7 +571,7 @@ func _tick(dt: float) -> void:
 
 func _fire() -> void:
 	shot_clock = 0.23
-	var origin := player + Vector2(30,-55)
+	var origin := player + Vector2(65,-108)
 	var aim := Vector2(1,0)
 	# W/S or arrow keys allow 8-direction manual aiming while firing.
 	var up := Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)
@@ -980,18 +1017,11 @@ func _draw() -> void:
 	var wobble := Vector2(sin(age*78)*shake,cos(age*69)*shake) if not reduce_motion else Vector2.ZERO
 	draw_set_transform(wobble)
 	_background()
-	var scene_player := player
-	if state == "title": scene_player = Vector2(viewport_size.x-330,floor_y())
-	var animate := state == "playing" and absf(velocity.x)>0
-	if state == "playing":
-		animate = _held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT)
-	var actor_scale := 1.8 if portrait else 1.0
-	if state == "title": actor_scale *= 1.6
-	if invincible <= 0 or state != "playing" or int(age*14)%2==0:
-		_character(scene_player,"hero",actor_scale,animate)
-	if state == "title":
-		_character(Vector2(viewport_size.x-155,floor_y()),"sharmila",actor_scale,false)
-	else:
+	if state != "title":
+		var animate := state == "playing" and (_held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT))
+		var actor_scale := 1.55 if portrait else 1.0
+		if invincible <= 0 or state != "playing" or int(age*14)%2==0:
+			_character(player,"hero",actor_scale,animate)
 		var kind: String = ["teacher","senior","manager","father","aunty"][stage]
 		_character(boss_position(),kind,actor_scale,false)
 		if stage == 3: _character(boss_position()+Vector2(87,0),"aunty",actor_scale*0.85,false)
@@ -1020,6 +1050,61 @@ func _draw() -> void:
 		if flashes > 0: draw_rect(Rect2(Vector2.ZERO,viewport_size),Color(0.8,0.15,0.18,flashes*0.3))
 
 func _background() -> void:
+	var w := viewport_size.x
+	var h := viewport_size.y
+	if state == "title":
+		var size := COVER.get_size()
+		var scale_value := maxf(w/size.x,h/size.y)
+		var image_size := size*scale_value
+		var x := (w-image_size.x)*(0.80 if portrait else 0.5)
+		draw_texture_rect(COVER,Rect2(Vector2(x,(h-image_size.y)/2),image_size),false)
+		# The painting provides the scene; a gentle ink glaze gives menu text contrast.
+		draw_rect(Rect2(0,0,w,h),Color(0.015,0.065,0.055,0.12))
+		return
+	var texture: Texture2D = SCENERY[stage]
+	var size := texture.get_size()
+	var g := floor_y()
+	var scale_value := maxf(w/size.x,(g-230.0)/(size.y*0.82))
+	var image_size := size*scale_value
+	var point := Vector2((w-image_size.x)/2,g-image_size.y*0.82)
+	draw_rect(Rect2(0,0,w,h),Color("283f34"))
+	draw_texture_rect(texture,Rect2(point,image_size),false)
+	# Atmospheric pools of light and an inked stage apron separate controls from art.
+	draw_rect(Rect2(0,h-(190 if portrait else 120),w,200),Color(0.035,0.10,0.085,0.70))
+	if not reduce_motion:
+		for i in range(12):
+			var px := fmod(float(i*179)+age*9,w)
+			var py := fmod(float(i*97)+sin(age*.4+i)*12,g)
+			draw_circle(Vector2(px,py),1.5,Color(1,0.85,0.5,0.16))
+
+func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
+	var bob := sin(age*(12 if walking else 2.4))*1.8 if not reduce_motion else 0.0
+	var tex: Texture2D = HERO_SHEET if kind=="hero" else CAST_SHEET
+	var grid := Vector2(4,4) if kind=="hero" else Vector2(3,2)
+	var cell := tex.get_size()/grid
+	var column := 0
+	var row := 0
+	var flip := false
+	if kind=="hero":
+		row = [0,1,2,2,3][stage]
+		if walking:column = 1+int(age*9)%2
+		if state=="playing" and shot_clock>0.15:column=3
+		flip = facing<0 and walking and column!=3
+	else:
+		var index: int = {"teacher":0,"senior":1,"manager":2,"father":3,"aunty":4,"sharmila":5}.get(kind,5)
+		column = index%3
+		row = index/3
+		flip = kind in ["teacher","senior","father","aunty"]
+	var height := 176.0*scale_factor
+	var size := Vector2(cell.x/cell.y*height,height)
+	var shadow_scale := clampf(1.0-(floor_y()-pos.y)/400.0,0.3,1.0)
+	_oval(Vector2(pos.x,floor_y()+5),Vector2(30*scale_factor*shadow_scale,7*scale_factor),Color(0.015,0.06,0.045,0.25*shadow_scale))
+	draw_set_transform(pos+Vector2(0,bob),0,Vector2(-1 if flip else 1,1))
+	var tint := Color(1.5,1.4,1.1,1) if boss_flash>0 and kind!="hero" else Color.WHITE
+	draw_texture_rect_region(tex,Rect2(Vector2(-size.x/2,-size.y*0.97),size),Rect2(Vector2(column,row)*cell,cell),tint)
+	draw_set_transform(Vector2.ZERO)
+
+func _background_legacy() -> void:
 	var w := viewport_size.x
 	var g := floor_y()
 	var wall := Color("e5d5b5")
@@ -1113,7 +1198,7 @@ func _coffee(pos: Vector2, scale_factor: float) -> void:
 	draw_arc(Vector2(0,-46),10,PI,TAU,10,Color(1,1,0.9,0.5),2)
 	draw_set_transform(Vector2.ZERO)
 
-func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
+func _character_legacy(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
 	var step := sin(age*15)*12 if walking and not reduce_motion else 0.0
 	var bob := sin(age*(15 if walking else 3))*2 if not reduce_motion else 0.0
 	_oval(Vector2(pos.x,floor_y()+4),Vector2(31*scale_factor,8),Color(0.1,0.15,0.12,0.18))
@@ -1225,19 +1310,34 @@ func _draw_hazard(hazard: Dictionary) -> void:
 			if hazard.kind == "ticket": _text("BUG",p+Vector2(-12,5),11,ROSE)
 
 func _draw_controls() -> void:
-	var labels := {"left":"<", "right":">", "dash":"DASH", "parry":"PARRY", "jump":"JUMP", "fire":"LETTER"}
+	var labels := {"left":"MOVE", "right":"MOVE", "dash":"DASH", "parry":"PARRY", "jump":"JUMP", "fire":"LETTER"}
 	for action in control_rects:
 		var rect: Rect2 = control_rects[action]
-		var bg := Color("284c46")
-		var border := Color("97ab8d")
-		if _held(action): bg = ROSE
-		if action == "fire": bg = ROSE if not _held(action) else Color("d36d75")
-		if action == "parry": border = Color("e591a1")
-		if action == "dash" and dash_cooldown > 0: bg = Color("657069")
+		var bg := Color("213e37")
+		var border := Color("b7a16b")
+		if _held(action): bg = Color("94704e")
+		if action=="fire":bg = Color("a64350") if not _held(action) else Color("c6676e")
+		if action=="parry":border=Color("df8d9e")
+		if action=="dash" and dash_cooldown>0:bg=Color("485a50")
 		draw_style_box(_style(bg,border,18),rect)
+		draw_line(rect.position+Vector2(18,5),rect.position+Vector2(rect.size.x-18,5),Color(1,0.88,0.64,0.18),2)
+		var center := rect.get_center()+Vector2(0,-10*ui_scale)
+		var icon_size := 16*ui_scale
+		if action=="left" or action=="right":
+			var direction := -1.0 if action=="left" else 1.0
+			draw_polyline(PackedVector2Array([center+Vector2(-direction*icon_size,-icon_size),center+Vector2(direction*icon_size,0),center+Vector2(-direction*icon_size,icon_size)]),PAPER,4*ui_scale,true)
+		elif action=="dash":
+			for dx in [-9,10]:
+				var point := center+Vector2(dx*ui_scale,0)
+				draw_polyline(PackedVector2Array([point+Vector2(-8,-12)*ui_scale,point+Vector2(4,0)*ui_scale,point+Vector2(-8,12)*ui_scale]),GOLD,3*ui_scale,true)
+		elif action=="jump":
+			draw_line(center+Vector2(0,14)*ui_scale,center+Vector2(0,-13)*ui_scale,PAPER,4*ui_scale,true)
+			draw_polyline(PackedVector2Array([center+Vector2(-12,-2)*ui_scale,center+Vector2(0,-14)*ui_scale,center+Vector2(12,-2)*ui_scale]),PAPER,4*ui_scale,true)
+		elif action=="parry":_heart(center,17*ui_scale,Color("ed9cab"))
+		else:_envelope(center,PAPER,1.35*ui_scale)
 		var label: String = labels[action]
-		if action == "dash" and dash_cooldown > 0: label = "%.1fs" % dash_cooldown
-		_text(label,rect.get_center()+Vector2(0,9*ui_scale),int((34 if action in ["left","right"] else 20)*ui_scale),PAPER,true)
+		if action=="dash" and dash_cooldown>0:label="%.1fs"%dash_cooldown
+		_text(label,rect.get_center()+Vector2(0,28*ui_scale),int(13*ui_scale),PAPER,true)
 
 func _text(text: String, pos: Vector2, size: int, color: Color, centered: bool=false) -> void:
 	var point := pos
