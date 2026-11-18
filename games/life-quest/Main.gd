@@ -6,10 +6,9 @@ const DISPLAY_FONT: Font = preload("res://fonts/CinzelDecorative-Bold.ttf")
 const COVER: Texture2D = preload("res://art/cover-v2.png")
 const HERO_SHEET: Texture2D = preload("res://art/hero_sheet-v2.png")
 const HERO_RUN: Texture2D = preload("res://art/hero-run-alpha-v3.png")
-const MASTER_WALK: Texture2D = preload("res://art/master-walk-v3.png")
 const REACTION_FACES: Texture2D = preload("res://art/reaction-faces-v5.png")
 const SCHOOL_OPENING: Texture2D = preload("res://art/school-opening-v6.png")
-const SCHOOL_POSES: Texture2D = preload("res://art/school-poses-v6.png")
+const SchoolArt = preload("res://SchoolArt.gd")
 const CAST_SHEET: Texture2D = preload("res://art/cast_sheet-v2.png")
 const SCENERY: Array[Texture2D] = [preload("res://art/school-v2.png"),preload("res://art/college-v2.png"),preload("res://art/office-v2.png"),preload("res://art/family-v2.png"),preload("res://art/wedding-v2.png")]
 const INK := Color("203936")
@@ -30,9 +29,16 @@ var school := School.new()
 var school_resolution := ""
 var school_action_button: Button
 var school_ducking := false
+var school_duck_latched := false
+var school_move_touches: Dictionary = {}
 var school_speed := 0.0
 var school_duck_blend := 0.0
 var school_whistle := 0.0
+var master_stride := 0.0
+var school_bell_pulse := 0.0
+var school_last_bell := false
+var school_breeze := 0.0
+var school_breeze_triggered := false
 var school_has_spoken := false
 var state := "title"
 var previous_state := "title"
@@ -172,6 +178,7 @@ func _sound(kind: String) -> void:
 	if not sound_on:
 		return
 	match kind:
+		"bell": sfx.stream = preload("res://audio/school-bell.wav")
 		"whistle": sfx.stream = preload("res://audio/school-whistle.wav")
 		"hit": sfx.stream = preload("res://audio/hit.wav")
 		"parry": sfx.stream = preload("res://audio/parry.wav")
@@ -212,7 +219,7 @@ func _save_progress() -> void:
 		push_warning("Progress could not be saved on this device (%s)." % error)
 
 func floor_y() -> float:
-	return viewport_size.y * 0.72 if portrait else viewport_size.y - 172.0
+	return viewport_size.y * (0.715 if stage == 0 else 0.72) if portrait else viewport_size.y - 172.0
 
 func boss_position() -> Vector2:
 	return Vector2(master_x if stage == 0 else viewport_size.x - 150, floor_y())
@@ -505,9 +512,15 @@ func _start_stage() -> void:
 		school.reset_attempt()
 		school_resolution = ""
 		school_ducking = false
+		school_duck_latched = false
 		school_speed = 0.0
 		school_duck_blend = 0.0
 		school_whistle = 0.0
+		master_stride = 0.0
+		school_bell_pulse = 0.85
+		school_last_bell = false
+		school_breeze = 0.0
+		school_breeze_triggered = false
 		school_has_spoken = false
 		chat_error = ""
 		response = ""
@@ -517,7 +530,7 @@ func _start_stage() -> void:
 	resistance = 100
 	approval = 20
 	charm = 0
-	player = Vector2(80 if stage == 0 else 160, floor_y())
+	player = Vector2(112 if stage == 0 else 160, floor_y())
 	velocity = Vector2.ZERO
 	facing = 1
 	shot_clock = 0
@@ -621,11 +634,7 @@ func _make_hud() -> void:
 		talk_button.hide()
 		charm_bar.hide()
 		boss_label.text = "SUNDARAM’S AWARENESS"
-		var cell_width := (viewport_size.x - 76) / 5.0
-		control_rects.clear()
-		var actions := ["left", "right", "dash", "sneak", "pencil"]
-		for i in range(actions.size()):
-			control_rects[actions[i]] = Rect2(22+i*(cell_width+8), y, cell_width, h)
+		_school_control_layout(y,h)
 	if stage == 0:
 		school_action_button = _button(tools,"Place notebook [E]",_school_interact)
 		_compact_button(school_action_button)
@@ -637,6 +646,23 @@ func _make_hud() -> void:
 		activity_button.focus_mode = Control.FOCUS_NONE
 		activity_button.hide()
 	_update_hud()
+
+func _school_control_layout(y: float, height: float) -> void:
+	var width := viewport_size.x
+	var move_width := clampf(width*0.38, 280.0, 450.0)
+	var gap := 10.0
+	var left_button := (move_width-gap)/2.0
+	control_rects = {
+		"left":Rect2(22,y,left_button,height),
+		"right":Rect2(22+left_button+gap,y,left_button,height),
+	}
+	if school.repair_pending: return
+	var actions: Array = ["dash","sneak"] if school.level==0 else ["dash","pencil","sneak"]
+	var group_width := minf(width-44.0-move_width-40.0, 560.0)
+	var button_width := (group_width-gap*(actions.size()-1))/float(actions.size())
+	var start_x := width-22.0-group_width
+	for i in actions.size():
+		control_rects[actions[i]] = Rect2(start_x+i*(button_width+gap),y,button_width,height)
 
 func _activity_position() -> Vector2:
 	var x := _cover_positions()[1] if stage == 0 else viewport_size.x * 0.46
@@ -693,7 +719,7 @@ func _update_hud() -> void:
 			school_action_button.text = "Check in [E]" if school.repair_pending else "Place %s [%s]" % [school.NOTEBOOKS[mini(school.placed,2)],"E"]
 		resistance_bar.value = awareness
 		resistance_bar.add_theme_stylebox_override("fill", _style(ROSE if awareness > 60 else GOLD, GOLD, 4))
-		status_label.text = "HIDDEN • Cart blocks his view" if hidden_in_cover else ("SPOTTED • Find cover" if awareness > 5 else "Hold DUCK to crouch • Pencil %d/1" % int(school.pencil))
+		status_label.text = "Hidden" if hidden_in_cover else ("Seen • Get behind cover" if awareness > 5 else ("Tap Duck to stand" if school_duck_latched else "Tap Duck to sneak"))
 		if school.repair_pending: status_label.text = school.REPAIRS[school.level]
 		if notice_time > 0: status_label.text = notice
 		return
@@ -734,15 +760,16 @@ func _tick(dt: float) -> void:
 	var axis := 0.0
 	if _held("left") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): axis -= 1
 	if _held("right") or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): axis += 1
-	if axis != 0 and dash_time <= 0: facing = axis
+	if stage != 0 and axis != 0 and dash_time <= 0: facing = axis
 	school_ducking = stage == 0 and dash_time <= 0 and _sneaking()
 	if stage == 0:
-		var target_speed := axis*(125.0 if school_ducking else 270.0)
-		school_speed = move_toward(school_speed,target_speed,(2650.0 if axis == 0 else 2250.0)*dt)
-		school_duck_blend = move_toward(school_duck_blend,float(school_ducking),dt*12.0)
+		var target_speed := axis*(144.0 if school_ducking else 270.0)
+		school_speed = move_toward(school_speed,target_speed,(3100.0 if axis == 0 else 2650.0)*dt)
+		school_duck_blend = move_toward(school_duck_blend,float(school_ducking),dt*11.0)
+		if dash_time <= 0 and absf(school_speed)>22.0: facing = signf(school_speed)
 	var old_x := player.x
 	if dash_time > 0:
-		player.x += facing * 800 * dt
+		player.x += facing * (650.0 if stage==0 else 800.0) * dt
 		if int(age * 50) % 3 == 0: _burst(player + Vector2(0,-35), TEAL, 1)
 	else:
 		player.x += (school_speed if stage == 0 else axis*270.0)*dt
@@ -818,10 +845,17 @@ func _tick(dt: float) -> void:
 	_update_hud()
 
 func _sneaking() -> bool:
-	return _held("sneak") or _held("hide") or Input.is_physical_key_pressed(KEY_K) or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
+	return school_duck_latched or _held("sneak") or _held("hide") or Input.is_physical_key_pressed(KEY_K) or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
 
 func _cover_positions() -> Array[float]:
-	return [_stage_width()*0.22,_stage_width()*0.44,_stage_width()*0.62,_stage_width()*0.79]
+	var w := _stage_width()
+	if school.level == 1: return _school_desks()
+	if school.level == 0:
+		return [w*0.251,w*0.492,w*0.735]
+	return [w*0.22,w*0.44,w*0.62,w*0.79]
+
+func _school_cover_radius(index: int) -> float:
+	return SchoolArt.COVER_RADII[index] * (1.0 if portrait else 0.84)
 
 func _school_desks() -> Array[float]:
 	if school.repair_pending:
@@ -877,10 +911,20 @@ func _tick_stealth(dt: float) -> void:
 	if school.repair_pending:
 		return
 	school_whistle = maxf(0.0,school_whistle-dt)
+	school_bell_pulse = maxf(0.0,school_bell_pulse-dt)
+	school_breeze = maxf(0.0,school_breeze-dt)
+	if not school_breeze_triggered and player.x >= _cover_positions()[0]:
+		school_breeze_triggered = true
+		school_breeze = 3.4
+	if not school_last_bell and elapsed >= school.TIMES[school.level]-7.0:
+		school_last_bell = true
+		school_bell_pulse = 1.5
+		_sound("bell")
 	hidden_in_cover = false
 	if school_ducking:
-		for cart in _cover_positions():
-			if absf(player.x-cart) <= 49.0:
+		var cover := _cover_positions()
+		for i in cover.size():
+			if absf(player.x-cover[i]) <= _school_cover_radius(i):
 				hidden_in_cover = true
 				break
 	var pickup_x := _stage_width()*0.31
@@ -901,10 +945,12 @@ func _tick_stealth(dt: float) -> void:
 		school.listen_time = maxf(0.0,school.listen_time-dt)
 	elif master_turn > 0:
 		master_turn = maxf(0.0,master_turn-dt)
-		if master_turn == 0.0: master_facing = school.turn_face
+		# Change the sight cone when his eyes actually turn, midway through the pivot.
+		if master_turn <= 0.60: master_facing = school.turn_face
 	else:
 		var bounds_left := _stage_width()*0.40
 		var bounds_right := _stage_width() - (255.0 if school.level == 2 else 190.0)
+		var previous_master_x := master_x
 		master_x += master_facing * (78.0+school.level*10.0) * dt
 		if master_x >= bounds_right or master_x <= bounds_left:
 			master_x = clampf(master_x,bounds_left,bounds_right)
@@ -912,6 +958,7 @@ func _tick_stealth(dt: float) -> void:
 			master_turn = 1.2
 			school_whistle = 0.55
 			if absf(player.x-master_x) < viewport_size.x: _sound("whistle")
+		master_stride += absf(master_x-previous_master_x)
 	# Crouching below the cart occludes the student. In the open he is still visible.
 	var seen := _school_view_sees(player.x,hidden_in_cover) and (school.listen_time<=0 or absf(player.x-master_x)<48.0)
 	var previous := awareness
@@ -946,9 +993,9 @@ func _show_school_result() -> void:
 	var header := _row(col)
 	var portrait_art := TextureRect.new()
 	var face := AtlasTexture.new()
-	face.atlas = SCHOOL_POSES
-	var cell := SCHOOL_POSES.get_size()/Vector2(4,2)
-	face.region = Rect2(Vector2(cell.x*(3.21 if success or not school_resolution.is_empty() else 2.25),cell.y*1.025),cell*0.49)
+	face.atlas = SchoolArt.MASTER
+	var pose: Rect2 = SchoolArt.MASTER_FRAMES[7 if success or not school_resolution.is_empty() else 5]
+	face.region = Rect2(pose.position+Vector2(pose.size.x*0.16,0.0),Vector2(pose.size.x*0.72,pose.size.y*0.40))
 	portrait_art.texture = face
 	portrait_art.custom_minimum_size = Vector2.ONE*69.0*ui_scale
 	portrait_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -1088,7 +1135,7 @@ func _jump() -> void:
 
 func _dash() -> void:
 	if state == "playing" and dash_cooldown <= 0:
-		dash_time = 0.22
+		dash_time = 0.17 if stage==0 else 0.22
 		dash_cooldown = 0.55 if stage == 1 and activity_claimed else 1.0
 		invincible = maxf(invincible, 0.26)
 		_sound("letter")
@@ -1462,7 +1509,7 @@ func _show_help() -> void:
 	_label(col,"A little action. A lot of heart.",36)
 	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nHold LETTER to throw; auto letters are optional in Settings. Multiple fingers work together.",23)
 	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · Type freely to talk to the Qwen character",21)
-	_label(col,"SCHOOL: hold DUCK / S to crouch while moving. Carts block the master’s view.\nPress Q or tap PENCIL to roll a collected pencil. E interacts with desks.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
+	_label(col,"SCHOOL: tap DUCK to switch stance, or hold S on a keyboard. Crouch behind furniture to hide.\nPress Q or tap PENCIL to roll a collected pencil. E interacts with desks.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
 	_label(col,"A short dash makes you invincible. A tiffin heals once per act.\nOn a phone, landscape gives you more room to dodge.",21,Color("b9cbb6"))
 	_button(col,"Got it  >",_settings_back,true).grab_focus()
 
@@ -1477,11 +1524,16 @@ func _notification(what: int) -> void:
 func _clear_input() -> void:
 	held.clear()
 	pointer_actions.clear()
+	school_move_touches.clear()
+	school_speed = 0.0
 
 func _held(action: String) -> bool:
 	return action in pointer_actions.values() or bool(held.get(action,false))
 
 func _input(event: InputEvent) -> void:
+	if stage == 0 and state == "playing" and (event is InputEventScreenTouch or event is InputEventScreenDrag):
+		_school_touch(event)
+		return
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:
 		var id: int = event.index
 		if event is InputEventScreenTouch and not event.pressed:
@@ -1493,6 +1545,8 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventScreenTouch and event.pressed: _action(action)
 		if action != "": get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		# Emulated mouse still reaches UI buttons, but cannot toggle a canvas control twice.
+		if stage==0 and event.device==-1: return
 		if not event.pressed:
 			pointer_actions.erase(-1)
 		elif state == "playing":
@@ -1500,6 +1554,31 @@ func _input(event: InputEvent) -> void:
 			pointer_actions[-1] = action
 			_action(action)
 			if action != "": get_viewport().set_input_as_handled()
+
+func _school_touch(event: InputEvent) -> void:
+	var id: int = event.index
+	if event is InputEventScreenTouch:
+		if not event.pressed or event.canceled:
+			school_move_touches.erase(id)
+			pointer_actions.erase(id)
+			return
+		var action := _control_at(event.position)
+		if action.is_empty(): return
+		pointer_actions[id] = action
+		if action in ["left","right"]:
+			school_move_touches[id] = true
+		else:
+			_action(action)
+		get_viewport().set_input_as_handled()
+	elif school_move_touches.has(id):
+		var pad: Rect2 = control_rects["left"].merge(control_rects["right"])
+		# Catch small thumb drift and allow reversing by sliding across the pad.
+		pointer_actions[id] = ""
+		if pad.grow(24.0).has_point(event.position):
+			pointer_actions[id] = "left" if event.position.x < pad.get_center().x else "right"
+		get_viewport().set_input_as_handled()
+	elif pointer_actions.has(id):
+		get_viewport().set_input_as_handled()
 
 func _control_at(point: Vector2) -> String:
 	for key in control_rects:
@@ -1514,6 +1593,8 @@ func _action(action: String) -> void:
 		"dash": _dash()
 		"parry": _parry()
 		"pencil": _throw_pencil()
+		"sneak":
+			if stage==0: school_duck_latched = not school_duck_latched
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo: return
@@ -1623,16 +1704,18 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 	if state == "playing":
 		if impact_time > 0: _draw_impact(world_offset)
-		var master_alert := stage == 0 and awareness >= 35.0
-		var reaction_side := -facing
-		if master_alert and absf(player.x-master_x) < 260:
-			reaction_side = 1.0 if player.x > master_x else -1.0
-		if face_time > 0:
-			_draw_reaction(player+world_offset,face_frame,reaction_side,ROSE if face_frame!=2 else GOLD)
-		if master_alert:
-			var master_screen := boss_position()+world_offset
-			if master_screen.x >= 0 and master_screen.x <= viewport_size.x:
-				_draw_reaction(master_screen,3,-reaction_side if face_time > 0 else master_facing,GOLD)
+		if stage == 0 and not school.repair_pending:
+			var cue := boss_position()+world_offset+Vector2(0,-_school_actor_height(false)-27)
+			var word := ""
+			if awareness>=52: word = "!"
+			elif school.listen_time>0: word = "LISTENING"
+			elif master_turn>0: word = "TURNING"
+			if not word.is_empty():
+				var badge_size := Vector2(45,38) if word=="!" else Vector2(139,38)
+				draw_style_box(_style(INK,ROSE if word=="!" else GOLD,10),Rect2(cue-badge_size*0.5,badge_size))
+				_text(word,cue+Vector2(0,6),18,PAPER,true)
+		elif face_time > 0:
+			_draw_reaction(player+world_offset,face_frame,-facing,ROSE if face_frame!=2 else GOLD)
 	# Film perforations and subtle texture make the world feel like a printed reel.
 	for x in range(10,int(viewport_size.x),36):
 		draw_rect(Rect2(x,4,17,7),Color(0.06,0.12,0.10,0.65))
@@ -1674,6 +1757,8 @@ func _background() -> void:
 	var point := Vector2(x,g-image_size.y*0.82)
 	draw_rect(Rect2(0,0,w,h),Color("283f34"))
 	draw_texture_rect(texture,Rect2(point,image_size),false)
+	if stage==0 and state=="playing" and not reduce_motion:
+		_draw_school_atmosphere(point,image_size)
 	# Atmospheric pools of light and an inked stage apron separate controls from art.
 	draw_rect(Rect2(0,h-(190 if portrait else 120),w,200),Color(0.035,0.10,0.085,0.70))
 	if not reduce_motion:
@@ -1681,19 +1766,59 @@ func _background() -> void:
 			var px := fmod(float(i*179)+age*9,w)
 			var py := fmod(float(i*97)+sin(age*.4+i)*12,g)
 			draw_circle(Vector2(px,py),1.5,Color(1,0.85,0.5,0.16))
-		if stage == 0:
-			# Slow courtyard light and leaf silhouettes stay behind the playfield.
-			for i in range(5):
-				var lx := fposmod(160.0+i*277.0-camera_x*0.28+age*(4.0+i*0.7),w+70.0)-35.0
-				var ly := g-190.0-i*43.0+sin(age*0.8+i)*16.0
-				_oval(Vector2(lx,ly),Vector2(4.0,2.1),Color(0.93,0.81,0.46,0.24))
+func _draw_school_atmosphere(origin: Vector2, painted: Vector2) -> void:
+	_draw_school_students()
+	var bell := origin + painted*Vector2(0.398,0.158)
+	if school_bell_pulse>0.0:
+		var wave := fposmod(1.5-school_bell_pulse,0.48)/0.48
+		for side in [-1,1]:
+			var center := bell+Vector2(side*22.0,0)
+			var angle := PI if side<0 else 0.0
+			draw_arc(center,19.0+wave*29.0,angle-0.63,angle+0.63,16,Color(1,0.88,0.55,(1-wave)*0.65),3.0,true)
+	for i in range(8):
+		var phase_leaf := fposmod(age*(0.17+i*0.012)+i*0.32,1.0)
+		var at := Vector2(fposmod(i*211.0+phase_leaf*290.0-camera_x*0.37,viewport_size.x+90.0)-45.0,
+				floor_y()-460.0+phase_leaf*320.0+sin(age*1.8+i)*21.0)
+		var tone := Color(0.82,0.75,0.34,0.43) if i%3!=0 else Color(0.83,0.37,0.34,0.49)
+		var twist := Vector2(cos(age*2.1+i),sin(age*2.1+i))*7.0
+		draw_colored_polygon(PackedVector2Array([at-twist,at+twist.orthogonal()*0.39,at+twist,at-twist.orthogonal()*0.32]),tone)
+	if school_breeze>0.0:
+		var elapsed_breeze := 3.4-school_breeze
+		for i in range(3):
+			var t := clampf((elapsed_breeze-i*0.28)/2.8,0.0,1.0)
+			if t<=0.0 or t>=1.0: continue
+			var at := Vector2(_stage_width()*0.25-camera_x+72.0+t*240.0,floor_y()-155.0-sin(t*PI)*145.0-i*16.0)
+			var direction := Vector2.from_angle(t*5.4+i)*13.0
+			var edge := direction.orthogonal()*0.60
+			draw_colored_polygon(PackedVector2Array([at-direction-edge,at+direction-edge,at+direction+edge,at-direction+edge]),Color(0.98,0.88,0.66,sin(t*PI)*0.72))
 
+func _draw_school_students() -> void:
+	# Two separate corridors of depth. These actors are scenery only.
+	for i in range(2):
+		var cycle := fposmod(elapsed+(5.1 if i==0 else 12.7),21.0)
+		if cycle>17.4: continue
+		var direction := 1.0 if i==0 else -1.0
+		var lane := (cycle/17.4) if i==0 else (1.0-cycle/17.4)
+		var center_x := lerpf(-115.0,_stage_width()+110.0,lane)-camera_x*0.84
+		if center_x < -95.0 or center_x > viewport_size.x+95.0: continue
+		var depth_floor := floor_y()-(148.0 if i==0 else 201.0)
+		var frame := i*4+int(cycle*8.0)%4
+		var region: Rect2 = SchoolArt.STUDENTS_FRAMES[frame]
+		var student_height := (126.0 if portrait else 88.0)*(1.0 if i==0 else 0.88)
+		var size := region.size*(student_height/region.size.y)
+		var center := Vector2(center_x,depth_floor)
+		_oval(center,Vector2(27,5),Color(0.14,0.08,0.04,0.20))
+		draw_set_transform(center,0.0,Vector2(direction,1.0))
+		draw_texture_rect_region(SchoolArt.STUDENTS,Rect2(Vector2(-size.x/2.0,-size.y),size),region,Color(0.94,0.89,0.82,0.89))
+		draw_set_transform(Vector2.ZERO)
 
 func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
+	if stage == 0 and kind in ["hero","teacher"]:
+		_draw_school_actor(pos,kind=="hero")
+		return
 	var using_run := kind == "hero" and (walking or player.y < floor_y()-1) and attack_pose <= 0
-	var master_walking := kind == "teacher" and stage == 0 and walking
-	var tex: Texture2D = (HERO_RUN if using_run else HERO_SHEET) if kind=="hero" else (MASTER_WALK if master_walking else CAST_SHEET)
-	var grid := Vector2(4,4) if kind=="hero" else (Vector2(2,2) if master_walking else Vector2(3,2))
+	var tex: Texture2D = (HERO_RUN if using_run else HERO_SHEET) if kind=="hero" else CAST_SHEET
+	var grid := Vector2(4,4) if kind=="hero" else Vector2(3,2)
 	var cell := tex.get_size()/grid
 	var column := 0
 	var row := 0
@@ -1722,7 +1847,6 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 		if not reduce_motion:
 			if dash_time > 0: motion = Vector2(1.17,0.85)
 			elif landing_pose > 0: motion = Vector2(1+landing_pose*0.8,1-landing_pose*0.8)
-			elif hidden_in_cover and stage == 0: motion = Vector2(1.03,0.72)
 			elif not walking: motion = Vector2(1+sin(age*3)*0.012,1-sin(age*3)*0.012)
 			if flashes > 0:
 				tilt = -facing*0.12
@@ -1732,11 +1856,6 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 		column = index%3
 		row = index/3
 		flip = kind in ["teacher","senior","father","aunty"]
-		if kind == "teacher" and stage == 0: flip = master_facing < 0
-		if master_walking:
-			var frame := int(age*6)%4
-			column = frame%2
-			row = frame/2
 		if not reduce_motion:
 			motion = Vector2(1+sin(age*3)*0.012,1-sin(age*3)*0.012)
 			if walking:
@@ -1744,30 +1863,7 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 				bob = -absf(sin(age*9))*3
 			if windup > 0: motion = Vector2(1.08,0.92)
 			if boss_flash > 0: tilt = 0.10
-	var school_pose := false
-	if stage == 0 and kind == "hero" and (school_ducking or attack_pose>0) and state in ["playing","paused"]:
-		school_pose = true
-		row = 0
-		column = 3 if attack_pose>0 else (1+int(run_cycle*1.3)%2 if absf(school_speed)>12.0 else 0)
-		pivot = 0.47
-		motion = Vector2.ONE if reduce_motion else Vector2(lerpf(0.96,1.0,school_duck_blend),lerpf(1.14,1.0,school_duck_blend))
-		tilt = 0 if reduce_motion else facing*clampf(absf(school_speed)/2200.0,0.0,0.04)
-		bob = 0
-	elif stage == 0 and kind == "teacher":
-		row = 1
-		if state in ["school_result","dialogue","school_ending"]:
-			school_pose = true
-			column = 3 if school.outcome == "success" or not school_resolution.is_empty() or state=="school_ending" else 2
-			flip = true
-		elif school.listen_time>0 or school_whistle>0 or awareness>=65:
-			school_pose = true
-			column = 1 if school.listen_time>0 else (0 if school_whistle>0 else 2)
-		if school_pose: motion = Vector2.ONE
-	if school_pose:
-		tex = SCHOOL_POSES
-		cell = tex.get_size()/Vector2(4,2)
 	var height := 176.0*scale_factor
-	if school_pose and kind == "hero": height = minf(height,172.0)
 	var size := Vector2(cell.x/cell.y*height,height)
 	var shadow_scale := clampf(1.0-(floor_y()-pos.y)/400.0,0.3,1.0)
 	_oval(Vector2(pos.x,floor_y()+5),Vector2(30*scale_factor*shadow_scale,7*scale_factor),Color(0.015,0.06,0.045,0.25*shadow_scale))
@@ -1775,10 +1871,9 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 	var tint := Color(1.5,1.4,1.1,1) if boss_flash>0 and kind!="hero" else Color.WHITE
 	if kind == "hero" and state == "playing" and invincible > 0:
 		tint = Color(0.85,1.0,0.95,0.86)
-	if kind == "hero" and hidden_in_cover and stage == 0: tint.a = 1.0
 	# Crop the envelope painted into the throw pose; the live projectile animates it.
-	var visible_width := 0.78 if kind == "hero" and (school_pose or not using_run) and column == 3 else 1.0
-	var destination := Rect2(Vector2(-size.x*pivot,-size.y*(0.952 if school_pose and kind=="hero" else 0.985 if school_pose else 0.97)),Vector2(size.x*visible_width,size.y))
+	var visible_width := 0.78 if kind == "hero" and not using_run and column == 3 else 1.0
+	var destination := Rect2(Vector2(-size.x*pivot,-size.y*0.97),Vector2(size.x*visible_width,size.y))
 	var source := Rect2(Vector2(column,row)*cell+Vector2(2,2),Vector2((cell.x-4)*visible_width,cell.y-4))
 	if kind == "hero" and dash_time > 0 and not reduce_motion:
 		for i in [3,2,1]:
@@ -1787,6 +1882,53 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 			draw_texture_rect_region(tex,trail,source,Color(0.65,0.9,0.8,0.11))
 	# Inset source cells to prevent neighbouring poses bleeding through the atlas.
 	draw_texture_rect_region(tex,destination,source,tint)
+	draw_set_transform(Vector2.ZERO)
+
+func _school_actor_height(hero: bool) -> float:
+	if portrait: return 350.0 if hero else 376.0
+	return 211.0 if hero else 231.0
+
+func _draw_school_actor(pos: Vector2, hero: bool) -> void:
+	var is_action := state in ["playing","paused"]
+	var height := _school_actor_height(hero)
+	var facing_visual := facing if hero else master_facing
+	var lean := 0.0
+	var squash := Vector2.ONE
+	var frame := 0
+	if hero:
+		var moving := is_action and (absf(school_speed)>19.0 or dash_time>0)
+		var walk: int = int(run_cycle*1.37)%4
+		var ducked := is_action and (school_ducking or attack_pose>0 or school_duck_blend>0.38)
+		frame = SchoolArt.hero_frame(moving,ducked,is_action and attack_pose>0,walk)
+		if ducked: height *= 0.56
+		if not reduce_motion and is_action:
+			var velocity_lean := clampf(school_speed/310.0,-1.0,1.0)
+			lean = velocity_lean*0.055
+			if dash_time>0: squash = Vector2(1.11,0.94)
+			elif ducked: squash.y = lerpf(1.11,1.0,school_duck_blend) + 0.014*cos(run_cycle*4.8)
+			else: squash.y = lerpf(1.0,0.90,school_duck_blend)
+	else:
+		var turning := is_action and master_turn>0
+		var turn_progress := 1.0-master_turn/1.2
+		var speaking := state in ["school_result","dialogue","school_ending"]
+		frame = SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),school.listen_time>0,turning,turn_progress,awareness>=65,int(master_stride/11.5))
+		if turning:
+			facing_visual = -school.turn_face if turn_progress < 0.5 else school.turn_face
+			if not reduce_motion: squash.x = 1.0-0.10*sin(clampf(turn_progress,0.0,1.0)*PI)
+		if speaking: facing_visual = -1
+		height *= float(SchoolArt.MASTER_HEIGHTS[frame])
+		if is_action and not reduce_motion and not turning and school.listen_time<=0:
+			squash.y *= 1.0+0.012*cos(master_stride*0.14)
+	var source: Rect2 = SchoolArt.HERO_FRAMES[frame] if hero else SchoolArt.MASTER_FRAMES[frame]
+	var texture: Texture2D = SchoolArt.HERO if hero else SchoolArt.MASTER
+	var ratio := height/source.size.y
+	var size := source.size*ratio
+	var anchors: Array = SchoolArt.HERO_ANCHORS if hero else SchoolArt.MASTER_ANCHORS
+	var dst := Rect2(Vector2(-size.x*float(anchors[frame]),-size.y),size)
+	var shade := Vector2(height*0.22,9.0 if portrait else 6.0)
+	_oval(pos+Vector2(0,2),shade,Color(0.15,0.08,0.05,0.34))
+	draw_set_transform(pos,lean,Vector2(squash.x*facing_visual,squash.y))
+	draw_texture_rect_region(texture,dst,source)
 	draw_set_transform(Vector2.ZERO)
 
 func _draw_activity() -> void:
@@ -1819,8 +1961,9 @@ func _draw_stealth_scene() -> void:
 		for i in desks.size():
 			var desk := Vector2(desks[i],floor_y())
 			var trim: Color = GOLD if school.repair_pending else [ROSE,Color("7abad2"),GOLD][i]
-			draw_style_box(_style(Color("745841"),trim,7),Rect2(desk+Vector2(-68,-96),Vector2(136,90)))
-			var name_plate := desk+Vector2(0,-137)
+			if school.repair_pending:
+				_draw_school_prop(desk,2,180.0 if portrait else 149.0,Color.WHITE)
+			var name_plate := desk+Vector2(0,-(172.0 if portrait else 148.0))
 			draw_style_box(_style(INK,trim,7),Rect2(name_plate-Vector2(77,21),Vector2(154,37)))
 			_text(names[i],name_plate+Vector2(0,4),17,PAPER,true)
 	if school.repair_pending: return
@@ -1832,15 +1975,12 @@ func _draw_stealth_scene() -> void:
 		var t := 1.0-school.pencil_time/0.34
 		var p := Vector2(lerpf(school.pencil_origin,school.pencil_x,t),floor_y()-10.0-sin(t*PI)*48.0)
 		draw_line(p-Vector2(10,3),p+Vector2(10,3),GOLD,5,true)
-	var eye := boss_position()+Vector2(0,-112)
+	var eye := boss_position()+Vector2(0,-_school_actor_height(false)*0.78)
 	var view: float = [250.0,285.0,320.0][school.level]
-	var color := Color(1.0,0.93,0.65,0.30) if awareness < 60 else Color(0.85,0.22,0.24,0.35)
-	draw_colored_polygon(PackedVector2Array([eye,eye+Vector2(master_facing*view,-80),eye+Vector2(master_facing*view,112)]),color)
-	draw_line(eye,eye+Vector2(master_facing*view,112),INK,5,true)
-	draw_line(eye,eye+Vector2(master_facing*view,112),GOLD,2,true)
-	draw_line(eye,eye+Vector2(master_facing*view,-80),GOLD,2,true)
-	var cue := boss_position()+Vector2(0,-205*(1.3 if portrait else 1.0))
-	_text("LISTENING" if school.listen_time>0 else ("TURNING…" if master_turn>0 else ("!" if awareness>5 else "PATROL")),cue,22,ROSE if awareness > 60 else PAPER,true)
+	var color := Color(0.99,0.86,0.48,0.16) if awareness < 60 else Color(0.95,0.24,0.24,0.29)
+	var sight_edge := Vector2(eye.x+master_facing*view,floor_y()+1.0)
+	draw_colored_polygon(PackedVector2Array([eye,eye+Vector2(master_facing*view,-58),sight_edge]),color)
+	draw_line(eye,sight_edge,Color(0.96,0.79,0.40,0.55),2.5,true)
 	if school.level == 1: return
 	var gate := Vector2(_stage_width()-60,floor_y())
 	draw_style_box(_style(Color("224c42"),GOLD,14),Rect2(gate+Vector2(-38,-175),Vector2(76,170)))
@@ -1850,24 +1990,24 @@ func _draw_stealth_scene() -> void:
 	draw_polyline(PackedVector2Array([arrow+Vector2(4,-12), arrow+Vector2(17,0), arrow+Vector2(4,12)]), GOLD, 4, true)
 	if hidden_in_cover: _text("HIDDEN",player+Vector2(0,-185),20,GOLD,true)
 
+func _draw_school_prop(base: Vector2, index: int, width: float, tint: Color) -> void:
+	var region: Rect2 = SchoolArt.PROPS_FRAMES[index]
+	var size := Vector2(width,width * region.size.y/region.size.x)
+	_oval(base+Vector2(0,3),Vector2(width*0.48,11),Color(0.18,0.10,0.06,0.33))
+	draw_texture_rect_region(SchoolArt.PROPS,Rect2(base-Vector2(size.x*0.5,size.y),size),region,tint)
+
 func _draw_cover_props() -> void:
-	for x in _cover_positions():
-		var base := Vector2(x,floor_y())
-		_oval(base+Vector2(0,4),Vector2(66,10),Color(0.03,0.06,0.04,0.3))
-		var cover_color := Color("78533d")
-		var cover_edge := INK
-		var occupying := hidden_in_cover and absf(player.x-x)<=49.0
-		if occupying:
-			cover_color.a = 0.55
-			cover_edge.a = 0.75
-		draw_style_box(_style(cover_color,cover_edge,6),Rect2(base+Vector2(-59,-88),Vector2(118,76)))
-		for i in range(4):
-			var c: Color = [TEAL,ROSE,GOLD,PAPER][i]
-			if occupying: c.a = 0.64
-			draw_style_box(_style(c,INK,2),Rect2(base+Vector2(-53+i*27,-116-(i%2)*9),Vector2(24,42+(i%2)*9)))
-		draw_line(base+Vector2(-68,-77),base+Vector2(68,-77),GOLD,6)
-		for dx in [-44,44]: draw_circle(base+Vector2(dx,-8),9,INK)
-		_text("DUCK HERE",base+Vector2(0,-38),14,PAPER,true)
+	var cover := _cover_positions()
+	for i in cover.size():
+		var base := Vector2(cover[i],floor_y())
+		var width: float = SchoolArt.PROP_WIDTHS[i]*(1.0 if portrait else 0.84)
+		var hiding := hidden_in_cover and absf(player.x-cover[i]) <= _school_cover_radius(i)
+		var tint := Color(1,1,1,0.28 if hiding else 1.0)
+		var prop_index := 2 if school.level==1 else i
+		_draw_school_prop(base,prop_index,width,tint)
+		if hiding:
+			var tag := base+Vector2(0,20)
+			draw_line(tag-Vector2(17,0),tag+Vector2(17,0),Color("f7d991"),3.0,true)
 
 func _background_legacy() -> void:
 	var w := viewport_size.x
@@ -2081,6 +2221,8 @@ func _draw_controls() -> void:
 		var bg := Color("213e37")
 		var border := Color("b7a16b")
 		if _held(action): bg = Color("94704e")
+		if stage==0 and action=="sneak":
+			bg = Color("94704e") if school_duck_latched else Color("286457")
 		if action=="fire":bg = Color("a64350") if not _held(action) else Color("c6676e")
 		if action=="parry":border=Color("df8d9e")
 		if action=="dash" and dash_cooldown>0:bg=Color("485a50")
@@ -2102,12 +2244,15 @@ func _draw_controls() -> void:
 			draw_arc(center,icon_size,0,PI,16,GOLD,3*ui_scale,true)
 			draw_line(center-Vector2(icon_size,0),center+Vector2(icon_size,0),GOLD,3*ui_scale,true)
 		elif action=="sneak":
-			_oval(center,Vector2(icon_size,icon_size*0.4),PAPER)
+			draw_circle(center+Vector2(7,-10)*ui_scale,5.5*ui_scale,PAPER,true)
+			draw_polyline(PackedVector2Array([center+Vector2(4,-4)*ui_scale,center+Vector2(-9,3)*ui_scale,center+Vector2(1,10)*ui_scale,center+Vector2(13,10)*ui_scale]),PAPER,4.0*ui_scale,true)
 		elif action=="pencil":
 			draw_line(center+Vector2(-10,10)*ui_scale,center+Vector2(10,-10)*ui_scale,GOLD if school.pencil else Color("788681"),6*ui_scale,true)
 		elif action=="parry":_heart(center,17*ui_scale,Color("ed9cab"))
 		else:_envelope(center,PAPER,1.35*ui_scale)
 		var label: String = labels[action]
+		if stage==0 and action in ["left","right"]: label = action.to_upper()
+		if stage==0 and action=="sneak" and school_duck_latched: label = "DUCKED"
 		if action=="dash" and dash_cooldown>0:label="%.1fs"%dash_cooldown
 		_text(label,rect.get_center()+Vector2(0,28*ui_scale),int(13*ui_scale),PAPER,true)
 

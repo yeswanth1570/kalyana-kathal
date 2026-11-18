@@ -217,9 +217,38 @@ func run() -> void:
 	game._jump()
 	game._fire()
 	check(game.parry_time==0 and game.velocity.y==0 and game.shots.is_empty(),"School has stealth controls without combat attacks")
-	game.master_x=600
+	check(not game.control_rects.has("pencil"),"Before the Bell hides unavailable pencil controls")
+	var duck_tap := InputEventScreenTouch.new()
+	duck_tap.position=game.control_rects.sneak.get_center()
+	duck_tap.index=0
+	duck_tap.pressed=true
+	game._input(duck_tap)
+	duck_tap.pressed=false
+	game._input(duck_tap)
+	game._tick(.016)
+	check(game.school_duck_latched and game.school_ducking,"Duck remains latched after a tap is released")
+	var pad_press := InputEventScreenTouch.new()
+	pad_press.index=1
+	pad_press.pressed=true
+	pad_press.position=game.control_rects.left.get_center()
+	game._input(pad_press)
+	var drag := InputEventScreenDrag.new()
+	drag.index=1
+	drag.position=game.control_rects.right.get_center()
+	game._input(drag)
+	check(not game._held("left") and game._held("right"),"Sliding across the movement pad reverses direction")
+	drag.position=game.control_rects.sneak.get_center()
+	game._input(drag)
+	check(not game._held("right") and game.school_duck_latched,"Dragging off movement stops and never toggles an action")
+	pad_press.pressed=false
+	game._input(pad_press)
+	game._start_stage()
+	check(not game.school_duck_latched,"Restart clears the latched stance")
+	check(game.SchoolArt.master_frame(false,false,false,true,.5,false,0)==4,"Patrol turns transition through the canonical front pose")
+
 	game.master_facing=1
 	game.player.x=game._cover_positions()[2]
+	game.master_x=game.player.x-130.0
 	game._tick(.1)
 	check(game.awareness>0 and not game.hidden_in_cover,"Standing behind a cart is visible")
 	game.held["sneak"]=true

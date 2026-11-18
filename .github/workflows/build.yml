@@ -67,7 +67,7 @@ jobs:
             cp "$source/web/chat.js" "$source/web/chat.css" "$source/art/cover-v2.png" "$destination/"
             cp "$source/fonts/CinzelDecorative-Bold.ttf" "$source/fonts/CinzelDecorative-OFL.txt" "$destination/"
           }
-          export_life_quest games/life-quest "$PWD/build/web/life-quest-preview" game-v6
+          export_life_quest games/life-quest "$PWD/build/web/life-quest-preview" game-v7
           # Keep the public stable game on its last tested release until device sign-off.
           git worktree add --detach "$RUNNER_TEMP/kalyana-stable" 7561aca9e89f622e60423fb49e42ae62ef1ce355
           stable="$RUNNER_TEMP/kalyana-stable/games/life-quest"
@@ -80,8 +80,8 @@ jobs:
           test -s build/web/life-quest/index.html
           test -s build/web/life-quest/chat.js
           test -s build/web/life-quest/chat.css
-          test -s build/web/life-quest-preview/game-v6.pck
-          test -s build/web/life-quest-preview/game-v6.wasm
+          test -s build/web/life-quest-preview/game-v7.pck
+          test -s build/web/life-quest-preview/game-v7.wasm
           test -s build/web/life-quest/game-v5.pck
           test -s build/web/life-quest-preview/index.html
           if grep -q '\$GODOT_' build/web/life-quest*/index.html; then exit 1; fi

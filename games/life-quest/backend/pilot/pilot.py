@@ -163,8 +163,8 @@ def validate_draft(draft):
 
 def serve(store, directory):
     directory = directory.resolve()
-    if not (directory / "index.html").is_file() or not (directory / "game-v6.pck").is_file():
-        raise ValueError("Point the pilot at a built v6 web export.")
+    if not (directory / "index.html").is_file() or not (directory / "game-v7.pck").is_file():
+        raise ValueError("Point the pilot at a built v7 web export.")
 
     class PilotHandler(SimpleHTTPRequestHandler):
         def __init__(self, *args):
@@ -204,7 +204,7 @@ def serve(store, directory):
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
-            elif re.fullmatch(r"/(?:game-v6\.[A-Za-z0-9.]+|chat\.(?:js|css)|cover-v2\.png|CinzelDecorative-Bold\.ttf)", route):
+            elif re.fullmatch(r"/(?:game-v7\.[A-Za-z0-9.]+|chat\.(?:js|css)|cover-v2\.png|CinzelDecorative-Bold\.ttf)", route):
                 super().do_GET()
             else:
                 self.reply(404, {"error": "Not found."})

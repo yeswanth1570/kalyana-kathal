@@ -2,7 +2,7 @@ extends RefCounted
 
 const TITLES := ["Before the Bell", "The Report Card", "The Side Gate"]
 const TIMES := [28.0, 44.0, 42.0]
-const EXTRA_WIDTH := [0.0, 260.0, 560.0]
+const EXTRA_WIDTH := [168.0, 260.0, 560.0]
 const NOTEBOOKS := ["RED", "BLUE", "GOLD"]
 const WIN_LINES := [
 	"You made it to class before the bell. Why were you in the corridor?",
@@ -25,7 +25,7 @@ const REPAIR_REPLIES := [
 	"I tried to slip out. I’ll take the supervised route and respect her answer."
 ]
 const PROMPTS := [
-	"Get to the classroom door on the right. Hold DUCK while moving and use carts for cover.",
+	"Get to the classroom door on the right. Tap DUCK, then move between hiding spots.",
 	"Return Red, Blue, then Gold notebooks to matching desks. Use PLACE or E near a desk.",
 	"Carry the note to the side gate. Use the pencil to turn Sundaram’s gaze before crossing."
 ]

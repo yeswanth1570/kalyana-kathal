@@ -57,6 +57,14 @@ func run() -> void:
 	game.school.level=2
 	game._start_stage()
 	await capture("stealth-portrait")
+	game.elapsed=3.7
+	game._tick(.016)
+	await capture("school-crowd-portrait")
+	game.master_turn=0.60
+	game.school.turn_face=-1
+	await capture("school-pivot-portrait")
+	game.master_turn=0.0
+
 	game.held["sneak"]=true
 	game.held["right"]=true
 	for i in range(10):
