@@ -50,8 +50,19 @@ func run() -> void:
 	game._show_dialogue()
 	await capture("dialogue-portrait")
 	game.stage=0
+	game.school.level=0
+	game._show_intro()
+	await create_timer(0.45).timeout
+	await capture("school-opening-portrait")
+	game.school.level=2
 	game._start_stage()
 	await capture("stealth-portrait")
+	game.held["sneak"]=true
+	game.held["right"]=true
+	for i in range(10):
+		game._tick(.016)
+	await capture("sneak-stride-portrait")
+	game.held.clear()
 	game.player.x=game._stage_width()-110
 	game.master_x=game.player.x-120
 	game.awareness=43.0
@@ -66,8 +77,15 @@ func run() -> void:
 	game._tick(.016)
 	game._update_hud()
 	await capture("hidden-portrait")
-	game._use_activity()
-	await capture("grades-portrait")
+	game._end_school("failure","caught")
+	await capture("school-caught-portrait")
+	game._school_choice(false)
+	await capture("school-repair-result-portrait")
+	game.school.level=1
+	game._start_stage()
+	game.player.x=game._school_desks()[0]
+	game._update_hud()
+	await capture("school-notebooks-portrait")
 	root.size=Vector2i(1100,700)
 	await process_frame
 	game._resize()

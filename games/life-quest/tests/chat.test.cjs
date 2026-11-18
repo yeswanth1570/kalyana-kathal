@@ -52,3 +52,20 @@ test('Manual skip aborts generation; its late reply cannot enter next conversati
 test('Closing a health check ignores its stale failure after reopening',async()=>{
  let rejectFirst;let count=0;const h=harness(()=>++count===1?new Promise((_,reject)=>rejectFirst=reject):Promise.resolve(ready));h.open();h.api.hide();h.open(2);await flush();rejectFirst(Error('old network failure'));await flush();assert.equal(h.events.length,0);assert.equal(h.$('character-chat').hidden,false);
 });
+const schoolScene={id:4,actor:'Sundaram',stage:0,phase:0,approval:0,hint:'Explain why you were there.',messages:[],turns:0,turn_limit:2,school:{level:0,outcome:'success',reason:'reached',notebooks:0,honor_pass:false}};
+test('School dialogue uses its own endpoint and forwards only valid school reply shape',async()=>{
+ let request;
+ const h=harness(async(url,options)=>{
+  if(url.endsWith('health'))return ready;
+  request={url,body:JSON.parse(options.body)};
+  return {ok:true,json:async()=>({source:'qwen',reply:'Fair enough.',emotion:'warm',addressed:['purpose']})};
+ });
+ h.api.open(schoolScene);await flush();
+ assert.equal(h.$('chat-return').hidden,true);
+ h.$('chat-input').value='I should have checked in.';
+ await h.$('chat-form').dispatch('submit');
+ assert.match(request.url,/\/api\/school$/);
+ assert.deepEqual(request.body.school,schoolScene.school);
+ assert.deepEqual(h.events[0].addressed,['purpose']);
+ assert.equal(h.events[0].id,4);
+});

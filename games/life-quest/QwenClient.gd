@@ -38,7 +38,7 @@ func check_connection() -> void:
 	var error := health.request(address+"/api/health",PackedStringArray(["Authorization: Bearer "+access_code]))
 	if error != OK: failed.emit("Qwen is unavailable")
 
-func send_message(text: String, stage: int, phase: int, approval: int, history: Array) -> void:
+func send_message(text: String, stage: int, phase: int, approval: int, history: Array, school: Dictionary = {}) -> void:
 	if busy:
 		return
 	if endpoint.is_empty() or access_code.is_empty():
@@ -51,7 +51,11 @@ func send_message(text: String, stage: int, phase: int, approval: int, history: 
 	busy = true
 	var headers := PackedStringArray(["Content-Type: application/json", "Authorization: Bearer " + access_code])
 	var body := {"text":text,"stage":stage,"phase":phase,"approval":approval,"history":history.slice(-8)}
-	var error := request.request(address+"/api/chat",headers,HTTPClient.METHOD_POST,JSON.stringify(body))
+	var route := "/api/chat"
+	if not school.is_empty():
+		route = "/api/school"
+		body = {"school":school,"text":text,"history":history.slice(-8)}
+	var error := request.request(address+route,headers,HTTPClient.METHOD_POST,JSON.stringify(body))
 	if error != OK:
 		busy = false
 		failed.emit("Could not connect to the PC. Check the relay, then retry.")

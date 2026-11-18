@@ -29,6 +29,27 @@ class API(unittest.TestCase):
     def test_wrong_code(self):self.assertEqual(self.request(body=self.valid(),token='wrong')[0],401)
     def test_untrusted_origin(self):self.assertEqual(self.request(body=self.valid(),origin='https://evil.example')[0],403)
     def test_no_arbitrary_files(self):self.assertEqual(self.request(path='/.private/access.txt')[0],404)
+    def test_school_selects_sundaram_and_checks_failure_concerns(self):
+        body = {'school': {'level': 2, 'outcome': 'failure', 'reason': 'caught'},
+                'text': 'I rushed. I will go after class and ask if she wants the note.'}
+        with patch.object(server, 'request_model', return_value={
+            'reply': 'After class, and let her decide.',
+            'emotion': 'skeptical', 'addressed': ['ownership', 'repair', 'choice'],
+        }) as ask:
+            status, data, headers = self.request(path='/api/school', body=body)
+        self.assertEqual(status, 200)
+        self.assertEqual(data['addressed'], ['ownership', 'repair', 'choice'])
+        self.assertIn('Sundaram', ask.call_args.args[0][0]['content'])
+        self.assertEqual(headers['Cache-Control'], 'no-store')
+
+    def test_school_rejects_unknown_model_marks_and_no_pilot_endpoint(self):
+        body = {'school': {'level': 0, 'outcome': 'success', 'reason': 'reached'}, 'text': 'I was returning a page.'}
+        with patch.object(server, 'request_model', return_value={
+            'reply': 'Go.', 'emotion': 'warm', 'addressed': ['force_pass'],
+        }):
+            self.assertEqual(self.request(path='/api/school', body=body)[0], 502)
+        self.assertEqual(self.request(path='/pilot/submit', body=body)[0], 404)
+
     def test_no_research_api(self):self.assertEqual(self.request(path='/api/runs')[0],404)
     def test_unknown_act(self):
         data=self.valid();data['stage']=99;self.assertEqual(self.request(body=data)[0],400)

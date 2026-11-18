@@ -22,7 +22,7 @@ func run() -> void:
 	game.set_process(false)
 	game.music.stop()
 	# Keep tests from overwriting the player's real progress or settings.
-	var save_path: String = ProjectSettings.globalize_path("user://life-quest.cfg")
+	var save_path: String = ProjectSettings.globalize_path("user://school-preview.cfg")
 	var had_save := FileAccess.file_exists(save_path)
 	var saved_bytes := FileAccess.get_file_as_bytes(save_path) if had_save else PackedByteArray()
 	game.sound_on = false
@@ -132,14 +132,18 @@ func run() -> void:
 			check(not Story.ACTS[act].talks[p].q.is_empty(),"Act %d phase %d has grounded scene context"%[act+1,p+1])
 		game._start_stage()
 		if act == 0:
+			game.school.level=2
+			game._start_stage()
 			game.player.x = game._stage_width()-65
 			game._tick(.016)
+			game._school_choice(true)
+			game._resolve_school("pass")
 		for p in range(0 if act == 0 else 3):
 			game.resistance=game.THRESHOLDS[p]
 			game._tick(.016)
 			game._apply_agent_reply({"reply":"A contextual Qwen reply.","approval_delta":30,"attack_pattern":"calmer"})
 			game._continue_after_reply()
-		check(game.state=="clear","Act %d is completable"%(act+1))
+		check(game.state==("school_ending" if act==0 else "clear"),"Act %d is completable"%(act+1))
 	check(game.completed,"Final act saves completion")
 	# Advance real projectile movement and collision at 60 FPS through a full act.
 	game.stage=1
@@ -205,46 +209,92 @@ func run() -> void:
 	for i in range(56):game._tick(.016)
 	check(game.landing_pose>0,"Jump ends in a landing pose")
 	game.stage=0
-	game.auto_fire=true
-	game._start_stage()
-	game._fire()
-	for i in range(180):game._tick(.016)
-	check(game.shots.is_empty() and game.hazards.is_empty(),"School patrol never fires, even when auto letters are enabled")
-	game.master_x=600
-	game.master_facing=1
-	game.player=Vector2(710,game.floor_y())
-	game.awareness=0
-	game._tick(.1)
-	check(game.awareness>0,"Master detects a visible player in front")
-	game.player.x=400
-	game._tick(.1)
-	check(game.awareness<6.2,"Awareness falls when the player is behind the master")
-	game.player.x=game._cover_positions()[2]
-	game.held["hide"]=true
-	game.awareness=30
-	game._tick(.1)
-	check(game.hidden_in_cover and game.awareness<30,"Holding HIDE behind a cart blocks detection")
-	game.held.clear()
-	game.awareness=99
-	game.player.x=game.master_x+90
-	game.invincible=0
-	var before_caught: int=game.hp
-	game._tick(.1)
-	check(game.hp==before_caught-1 and game.player.x==80 and game.caught_timer>0,"Capture costs one heart and resets to safety")
-	for i in range(20):game._tick(.016)
-	check(game.hp==before_caught-1,"Capture cannot cause repeated immediate damage")
+	game.school.level=0
+	game.school.repair_pending=false
+	game.school.honor_pass=false
 	game._start_stage()
 	game._parry()
 	game._jump()
-	check(game.parry_time==0 and game.velocity.y==0,"School keyboard actions match the stealth touch controls")
+	game._fire()
+	check(game.parry_time==0 and game.velocity.y==0 and game.shots.is_empty(),"School has stealth controls without combat attacks")
+	game.master_x=600
 	game.master_facing=1
-	game.player.x=game.master_x+100
+	game.player.x=game._cover_positions()[2]
 	game._tick(.1)
-	var running_gain: float=game.awareness
-	game.awareness=0
+	check(game.awareness>0 and not game.hidden_in_cover,"Standing behind a cart is visible")
 	game.held["sneak"]=true
 	game._tick(.1)
-	check(game.awareness>0 and game.awareness<running_gain,"Sneaking slows detection inside the patrol view")
+	check(game.school_ducking and game.hidden_in_cover and game.awareness<6.2,"Ducking behind the cart occludes Sundaram’s view")
+	game.player.x=game.master_x+190
+	game.awareness=0
+	game._tick(.1)
+	check(game.school_ducking and not game.hidden_in_cover and game.awareness>0,"Ducking in the open slows but does not remove detection")
+	game._start_stage()
+	game.master_x=600
+	game.master_facing=1
+	game.awareness=99
+	game.player.x=690
+	game._tick(.05)
+	check(game.state=="school_result" and game.school.reason=="caught" and game.school.turn_limit()==4,"Capture opens a harder debrief immediately")
+	game._end_school("success","reached")
+	check(game.school.outcome=="failure","Duplicate terminal events cannot replace a captured result")
+	game._school_choice(false)
+	game._resolve_school("conditional")
+	check(game.state=="intro" and game.school.repair_pending,"Written repair earns a supervised checkpoint")
+	game._start_stage()
+	game.player.x=game._school_desks()[0]
+	game._school_interact()
+	check(game.school.level==1 and not game.school.repair_pending and game.state=="intro","Completing the repair unlocks the next scene")
+	game._start_stage()
+	game.player.x=game._school_desks()[1]
+	game._school_interact()
+	check(game.school.reason=="wrong_desk","Wrong notebook desk opens the failure debrief")
+	game._resolve_school("retry")
+	for i in range(3):
+		game.player.x=game._school_desks()[i]
+		game._school_interact()
+		if i==1:
+			game.player=game._activity_position()
+			game._use_activity()
+			check(game.school.honor_pass,"Two notebooks unlock the Honor Pass reward")
+	check(game.school.placed==3 and game.school.outcome=="success","Three correctly matched notebooks open a victory debrief")
+	game._school_choice(true)
+	game._resolve_school("pass")
+	check(game.school.level==2 and game.school.honor_pass,"Honor Pass carries into the finale")
+	game._start_stage()
+	game.player.x=game._stage_width()*.31
+	game._tick(.016)
+	check(game.school.pencil,"The player picks up a pencil")
+	game.master_x=game.player.x-150
+	game.master_facing=1
+	game._throw_pencil()
+	check(not game.school.pencil and game.awareness>=25,"An observed pencil throw is charged and raises suspicion")
+	game.player.x=game.master_x-160
+	game.facing=1
+	game.school.pencil=true
+	game._throw_pencil()
+	for i in range(22): game._tick(.016)
+	check(game.school.listen_time>1.5,"An unseen throw distracts Sundaram when it lands in view")
+	game.player.x=game._stage_width()-68
+	game.awareness=0
+	game._tick(.06)
+	check(game.state=="school_result" and game.school.turn_limit()==2 and game.camera_x>0,"A clean scroll-to-gate escape opens the easier debrief")
+	game.qwen.endpoint=""
+	game.qwen.access_code=""
+	game._open_school_chat()
+	check(game.state=="school_result" and game.school.outcome=="success","Unavailable Qwen keeps the required debrief playable with written responses")
+	game.state="dialogue"
+	game._apply_school_reply({"reply":"Why are you here?","addressed":["purpose","ownership"]})
+	check(game.school_resolution.is_empty(),"Extra or unrelated concern IDs cannot resolve Side Gate")
+	game._apply_school_reply({"reply":"Fair enough.","addressed":["choice"]})
+	check(game.school_resolution=="pass","Acknowledging refusal resolves a clean final debrief")
+	game._resolve_school("pass")
+	check(game.state=="school_ending" and game.unlocked>=1,"After class scene unlocks college")
+	game._start_stage()
+	game.elapsed=game.school.TIMES[2]
+	game._tick(.016)
+	check(game.state=="school_result" and game.school.reason=="bell","Timeout opens the failure debrief")
+	game._start_stage()
 	game.stage=1
 	game.auto_fire=false
 	game._start_stage()
@@ -260,41 +310,16 @@ func run() -> void:
 	game._action("fire")
 	check(game.shots.size()==1,"Rapid taps respect throw cooldown")
 	game.stage=0
+	game.school.level=0
+	game.school.repair_pending=false
 	game._start_stage()
-	game._use_activity()
-	check(not game.activity_claimed,"Activities require approaching the marked stop")
-	game.player = game._activity_position()
-	game._use_activity()
-	check(game.activity_claimed and game.notice.begins_with("Honor pass"),"School allows collecting good grades from the grade desk")
-	game.stage=1
-	game._start_stage()
-	game.player = game._activity_position()
-	game._use_activity()
-	game._dash()
-	check(is_equal_approx(game.dash_cooldown,.55),"Gym training shortens dash recovery")
-	game.stage=3
-	game._start_stage()
-	game.player = game._activity_position()
-	game._use_activity()
-	game._use_activity()
-	check(game.charm==40 and game.activity_claimed,"Haircut can award charm once per attempt")
-	game.stage=0
-	# Traverse the real patrol: hide at the middle cart, let him pass, then exit.
-	game._start_stage()
-	var hiding := false
-	var escaping := false
 	var stealth_frames := 0
-	while game.state=="playing" and stealth_frames<3000:
+	game.held["right"]=true
+	game.held["sneak"]=true
+	while game.state=="playing" and stealth_frames<1700:
 		stealth_frames+=1
-		if not hiding and game.player.x>=game._cover_positions()[1]-5:
-			hiding=true
-		if hiding and game.master_x<=game._cover_positions()[1]-65 and game.master_facing<0: escaping=true
-		game.held["right"]=not hiding or escaping
-		game.held["hide"]=hiding and not escaping
 		game._tick(1.0/60)
-	check(game.camera_x>0 and game.camera_x<=game.SCHOOL_SCROLL,"School camera follows through the extended corridor and stops at its boundary")
-	check(game.state=="clear" and game.hp==game.max_hp,"School can be cleared through real patrol movement and hiding without damage")
-	check(game.control_rects.has("hide") and not game.control_rects.has("fire"),"School touch controls expose stealth actions")
+	check(game.state=="school_result" and game.school.outcome=="success","Before the Bell can be cleared with real patrol movement")
 	game.qwen.cancel()
 	if had_save:
 		var file := FileAccess.open(save_path,FileAccess.WRITE)

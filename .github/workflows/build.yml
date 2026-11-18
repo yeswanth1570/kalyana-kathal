@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Godot and export templates
         uses: chickensoft-games/setup-godot@v2
@@ -55,17 +57,22 @@ jobs:
       - name: Export browser build
         run: mkdir -p build/web && godot --headless --path . --export-release "Web" build/web/index.html
 
-      - name: Export Life Quest mobile browser game
+      - name: Export the school chapter preview and the stable game
         run: |
-          mkdir -p build/web/life-quest
-          godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/game-v5.html
-          cp build/web/life-quest/game-v5.html build/web/life-quest/index.html
-
-      - name: Copy mobile conversation UI
-        run: |
-          cp games/life-quest/web/chat.js games/life-quest/web/chat.css build/web/life-quest/
-          cp games/life-quest/art/cover-v2.png build/web/life-quest/
-          cp games/life-quest/fonts/CinzelDecorative-Bold.ttf games/life-quest/fonts/CinzelDecorative-OFL.txt build/web/life-quest/
+          export_life_quest() {
+            local source="$1" destination="$2" executable="$3"
+            mkdir -p "$destination"
+            godot --headless --path "$source" --export-release Web "$destination/$executable.html"
+            cp "$destination/$executable.html" "$destination/index.html"
+            cp "$source/web/chat.js" "$source/web/chat.css" "$source/art/cover-v2.png" "$destination/"
+            cp "$source/fonts/CinzelDecorative-Bold.ttf" "$source/fonts/CinzelDecorative-OFL.txt" "$destination/"
+          }
+          export_life_quest games/life-quest "$PWD/build/web/life-quest-preview" game-v6
+          # Keep the public stable game on its last tested release until device sign-off.
+          git worktree add --detach "$RUNNER_TEMP/kalyana-stable" 7561aca9e89f622e60423fb49e42ae62ef1ce355
+          stable="$RUNNER_TEMP/kalyana-stable/games/life-quest"
+          godot --headless --editor --path "$stable" --quit
+          export_life_quest "$stable" "$PWD/build/web/life-quest" game-v5
 
       - name: Verify exported games
         run: |
@@ -73,9 +80,12 @@ jobs:
           test -s build/web/life-quest/index.html
           test -s build/web/life-quest/chat.js
           test -s build/web/life-quest/chat.css
+          test -s build/web/life-quest-preview/game-v6.pck
+          test -s build/web/life-quest-preview/game-v6.wasm
           test -s build/web/life-quest/game-v5.pck
-          test -s build/web/life-quest/game-v5.wasm
-          if grep -q '\$GODOT_' build/web/life-quest/index.html; then exit 1; fi
+          test -s build/web/life-quest-preview/index.html
+          if grep -q '\$GODOT_' build/web/life-quest*/index.html; then exit 1; fi
+          if find build/web -iname '*pilot*' -o -iname '*.sqlite' | grep -q .; then exit 1; fi
           touch build/web/.nojekyll
 
       - name: Export Windows build

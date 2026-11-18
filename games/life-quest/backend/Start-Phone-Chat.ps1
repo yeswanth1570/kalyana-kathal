@@ -1,4 +1,4 @@
-param([string]$CloudflaredPath = 'cloudflared.exe')
+param([string]$CloudflaredPath = 'cloudflared.exe', [switch]$Preview)
 $ErrorActionPreference = 'Stop'
 $backend = $PSScriptRoot
 $privateDir = Join-Path $backend '.private'
@@ -12,6 +12,22 @@ function Test-CharacterAPI([string]$base) {
         $health = Invoke-RestMethod ($base + '/api/health') -Headers @{ Authorization = 'Bearer ' + $accessCode } -TimeoutSec 6
         return [bool]$health.ready
     } catch { return $false }
+}
+if ($Preview -and (Test-CharacterAPI 'http://127.0.0.1:8787')) {
+    $header = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($accessFile).Trim() }
+    $currentApi = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -Headers $header -TimeoutSec 6
+    if (-not $currentApi.school_debrief) {
+        $ownedPidFile = Join-Path $privateDir 'server.pid'
+        if (-not (Test-Path -LiteralPath $ownedPidFile)) { throw 'Update the running character API before opening the school preview.' }
+        $ownedId = [int]([IO.File]::ReadAllText($ownedPidFile).Trim())
+        $owned = Get-CimInstance Win32_Process -Filter ('ProcessId='+$ownedId)
+        $listener = Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue | Where-Object OwningProcess -eq $ownedId
+        if (-not $owned -or $owned.Name -notmatch '^python(?:w)?\.exe$' -or $owned.CommandLine -notmatch '(?:^|[\s"\\])server\.py(?:$|[\s"])' -or -not $listener) {
+            throw 'The running game API could not be identified as the Life Quest game process.'
+        }
+        Stop-Process -Id $ownedId
+        Wait-Process -Id $ownedId -ErrorAction SilentlyContinue
+    }
 }
 if (-not (Test-CharacterAPI 'http://127.0.0.1:8787')) {
     $serverProcess = Start-Process -FilePath $pythonExe -ArgumentList 'server.py' -WorkingDirectory $backend -WindowStyle Hidden -RedirectStandardOutput (Join-Path $privateDir 'server-output.log') -RedirectStandardError (Join-Path $privateDir 'server-error.log') -PassThru
@@ -45,8 +61,10 @@ if (-not $relay) {
 }
 if (-not $relay) { throw 'The relay has not returned an HTTPS address. Try again.' }
 $accessCode = [IO.File]::ReadAllText($accessFile).Trim()
-$phoneLink = 'https://yeswanth1570.github.io/kalyana-kathal/life-quest/#api=' + [Uri]::EscapeDataString($relay) + '&key=' + [Uri]::EscapeDataString($accessCode)
-[IO.File]::WriteAllText($connectionFile,(@{server_url=$relay;client_url='https://yeswanth1570.github.io/kalyana-kathal/life-quest/'} | ConvertTo-Json))
+$gamePath = if ($Preview) { 'life-quest-preview' } else { 'life-quest' }
+$gameUrl = 'https://yeswanth1570.github.io/kalyana-kathal/' + $gamePath + '/'
+$phoneLink = $gameUrl + '#api=' + [Uri]::EscapeDataString($relay) + '&key=' + [Uri]::EscapeDataString($accessCode)
+[IO.File]::WriteAllText($connectionFile,(@{server_url=$relay;client_url=$gameUrl} | ConvertTo-Json))
 $escaped = [System.Net.WebUtility]::HtmlEncode($phoneLink)
 $html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your private Qwen game link</title><body style="font:18px system-ui;background:#203936;color:#f6e9cf;padding:32px;max-width:800px;margin:auto"><h1>Your private phone link</h1><p>Open this link on your phone. Keep the PC, Ollama and this relay running. Anyone with the link can use this game chat connection, so keep it private.</p><p><a style="color:#e3ba73" href="'+$escaped+'">Play Kalyana Kathal with Qwen on this PC</a></p><textarea style="width:100%;height:130px;font:16px system-ui">'+$escaped+'</textarea><p>Copy the link above to your phone. Restarting a temporary relay changes the address; run Start-Phone-Chat.ps1 again for a new link.</p></body>'
 [IO.File]::WriteAllText((Join-Path $privateDir 'phone-link.html'),$html)

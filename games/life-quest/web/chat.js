@@ -19,7 +19,15 @@ document.body.append(connection);
 let current=null,busy=false,turns=0,phaseGain=0,abort,generation=0;
 function callback(data){if(typeof window.kalyanaGameEvent==='function')window.kalyanaGameEvent(JSON.stringify({id:current?.id,...data}))}
 function bubble(role,text){const el=document.createElement('div');el.className='chat-bubble '+role;const name=document.createElement('span');name.className='bubble-name';name.textContent=role==='user'?'YOU':current.actor;const body=document.createElement('div');body.textContent=text;el.append(name,body);$('chat-messages').append(el);$('chat-messages').scrollTop=$('chat-messages').scrollHeight}
-function trust(){ $('chat-trust').textContent=`TRUST ${current.approval} / 72 TO CLEAR`; $('chat-trust-bar').value=current.approval}
+function trust(){
+ if(current.school){
+  $('chat-trust').textContent='TURN '+turns+' / '+current.turn_limit;
+  $('chat-trust-bar').max=current.turn_limit;
+  $('chat-trust-bar').value=turns;
+  return;
+ }
+ $('chat-trust-bar').max=100;
+ $('chat-trust').textContent=`TRUST ${current.approval} / 72 TO CLEAR`; $('chat-trust-bar').value=current.approval}
 function controls(){ $('chat-send').disabled=busy; $('chat-input').disabled=busy; $('chat-connect').disabled=busy; $('chat-return').disabled=busy||(turns===0&&!current?.chat_only); $('chat-send').textContent=busy?'…':'Send ↗'; }
 function validEndpoint(value){const u=new URL(value);if(u.username||u.password||u.search||u.hash)throw Error('Use only the relay origin, without a username, path or query.');if(u.protocol!=='https:'&&!((u.hostname==='localhost'||u.hostname==='127.0.0.1')&&u.protocol==='http:'))throw Error('The phone connection needs an HTTPS relay address.');return u.origin}
 function skip(reason='Conversation skipped'){
@@ -41,8 +49,16 @@ async function checkAvailability(){
 }
 function openConnection(){ $('qwen-url').value=endpoint;$('qwen-key').value=key;$('qwen-status').textContent='';connection.hidden=false }
 window.kalyanaChat={
- open(data){if(current&&current.id===data.id&&!section.hidden)return;abort?.abort();generation++;current=structuredClone(data);turns=data.turns||0;phaseGain=0;busy=false;$('chat-name').textContent=data.actor;$('chat-avatar').textContent=data.actor[0];$('chat-avatar').classList.toggle('sharmila',data.actor==='Sharmila');$('chat-reel').textContent=`ACT ${String(data.stage+1).padStart(2,'0')} / 05  ·  CONVERSATION ${data.phase+1} / 3`;$('chat-hint').textContent=data.hint;$('chat-messages').replaceChildren();for(const message of data.messages)bubble(message.role==='user'?'user':'assistant',message.content);$('chat-return').textContent=data.chat_only?'Back to title →':'Back to the scene →';$('chat-input').value='';$('chat-status').textContent=endpoint&&key?'Your words. Their response. Take your time.':'Connect your PC to talk to the Qwen character.';trust();controls();section.hidden=false;document.getElementById('fullscreen').hidden=true;checkAvailability();},
- hide(){generation++;abort?.abort();busy=false;$('chat-status').classList.remove('thinking');section.hidden=true;connection.hidden=true;current=null;document.getElementById('fullscreen').hidden=false;document.getElementById('canvas').focus()},
+ open(data){if(current&&current.id===data.id&&!section.hidden)return;abort?.abort();generation++;current=structuredClone(data);turns=data.turns||0;phaseGain=0;busy=false;$('chat-name').textContent=data.actor;$('chat-avatar').textContent=data.actor[0];$('chat-avatar').classList.toggle('sharmila',data.actor==='Sharmila');$('chat-reel').textContent=`ACT ${String(data.stage+1).padStart(2,'0')} / 05  ·  CONVERSATION ${data.phase+1} / 3`;$('chat-hint').textContent=data.hint;$('chat-messages').replaceChildren();for(const message of data.messages)bubble(message.role==='user'?'user':'assistant',message.content);$('chat-reel').textContent=data.school?'SCHOOL DEBRIEF  ·  '+(data.school.outcome==='success'?'MADE IT':'REPAIR NEEDED'):$('chat-reel').textContent;
+ $('chat-return').hidden=!!data.school;
+ $('chat-skip').textContent=data.school?'Use written response →':'Skip conversation · keep playing →';
+ $('chat-return').textContent=data.chat_only?'Back to title →':'Back to the scene →';$('chat-input').value='';$('chat-status').textContent=endpoint&&key?'Your words. Their response. Take your time.':'Connect your PC to talk to the Qwen character.';trust();controls();section.hidden=false;document.getElementById('fullscreen').hidden=true;checkAvailability();},
+ hide(){
+ const localPilot = location.hostname === '127.0.0.1' ? window.schoolPilot : null;
+ const review = localPilot && current?.school ? structuredClone(current) : null;
+ generation++;abort?.abort();busy=false;$('chat-status').classList.remove('thinking');section.hidden=true;connection.hidden=true;current=null;document.getElementById('fullscreen').hidden=false;document.getElementById('canvas').focus();
+ if(review) queueMicrotask(()=>localPilot.review(review));
+ },
  connect:openConnection
 };
 $('chat-skip').addEventListener('click',()=>skip());
@@ -60,9 +76,19 @@ $('chat-form').addEventListener('submit',async event=>{
  busy=true;controls();$('chat-status').classList.add('thinking');$('chat-status').textContent=current.actor+' is thinking with Qwen…';
  const ticket=generation,scene=structuredClone(current),controller=new AbortController();abort=controller;const timer=setTimeout(()=>controller.abort(),85000);
  try{
- const response=await fetch(endpoint+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({stage:scene.stage,phase:scene.phase,approval:scene.approval,text,history:scene.messages.slice(-8)}),signal:controller.signal});
- const data=await response.json();if(ticket!==generation)return;if(!response.ok)throw Error(data.error||'The PC could not complete the reply.');if(data.source!=='qwen'||typeof data.reply!=='string'||!data.reply.trim()||!Number.isInteger(data.approval_delta))throw Error('The PC returned an invalid Qwen reply.');
+ const body=scene.school
+  ? {school:scene.school,text,history:scene.messages.slice(-8)}
+  : {stage:scene.stage,phase:scene.phase,approval:scene.approval,text,history:scene.messages.slice(-8)};
+ const response=await fetch(endpoint+(scene.school?'/api/school':'/api/chat'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(body),signal:controller.signal});
+ const data=await response.json();if(ticket!==generation)return;if(!response.ok)throw Error(data.error||'The PC could not complete the reply.');if(data.source!=='qwen'||typeof data.reply!=='string'||!data.reply.trim()||(scene.school?!Array.isArray(data.addressed):!Number.isInteger(data.approval_delta)))throw Error('The PC returned an invalid Qwen reply.');
  bubble('user',text);bubble('assistant',data.reply);current.messages.push({role:'user',content:text},{role:'assistant',content:data.reply});current.messages=current.messages.slice(-12);turns++;
+ if(scene.school){
+  trust();
+  $('chat-input').value='';
+  $('chat-status').textContent='Sundaram · '+data.emotion;
+  callback({...data,kind:'reply',user_text:text,id:scene.id});
+  return;
+ }
  const raw=Math.max(-15,Math.min(30,data.approval_delta));const gain=raw>0?Math.min(raw,Math.max(0,36-phaseGain)):raw;phaseGain+=Math.max(0,gain);current.approval=Math.max(0,Math.min(100,current.approval+gain));trust();$('chat-input').value='';
  $('chat-status').textContent=`${gain>=0?'+':''}${gain} trust · ${data.emotion} · ${data.model} · ${data.seconds}s`;$('chat-model').textContent=data.model+' · running on your PC';callback({...data,kind:'reply',user_text:text,id:scene.id});
  }catch(e){if(ticket===generation)skip('Qwen connection lost')}
