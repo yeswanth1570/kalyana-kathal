@@ -14,7 +14,7 @@ Auto fire and Gentle mode are enabled by default. Change them in Settings. Reduc
 
 Touch: hold left/right, tap Jump/Dash/Parry, hold Letter when auto fire is disabled. Multiple fingers work independently. The Tiffin button heals two HP once per act. Speak opens an early conversation when the gold meter is full.
 
-Keyboard: A/D or Left/Right to move; Space jump; Shift dash; J/X fire; W/S or Up/Down to aim; K parry; H heal; R speak; Escape/P pause. In conversations choose 1/2/3 or type a reply. Text input consumes number keys normally.
+Keyboard: A/D or Left/Right to move; Space jump; Shift dash; J/X fire; W/S or Up/Down to aim; K parry; H heal; R speak; Escape/P pause. In conversations type a message freely and press Send. Enter sends; Shift+Enter adds a line in the browser chat.
 
 ## Live Qwen character conversations
 
