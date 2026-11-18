@@ -8,11 +8,11 @@ const ACTS: Array[Dictionary] = [
 		"year": "1999",
 		"boss": "Whistle Sundaram",
 		"tag": "Discipline first. Daydreams later.",
-		"intro": "A note for Sharmila. A corridor full of chalk.\nWin the PT master's trust before the bell rings.",
-		"hint": "Respect his rules. Be honest about the note.",
+		"intro": "A note for Sharmila. A corridor under watch.\nSlip past the PT master and reach the gate unseen.",
+		"hint": "Watch the gold vision cone. Hold HIDE at book carts. Move when he looks away.",
 		"tint": "54756d",
 		"weapon": "Folded notes",
-		"ending": "The master puts away his whistle. Sharmila accepts your note with a smile.\n\"Friends first, okay?\" she says. You agree.",
+		"ending": "You slip past the master. Sharmila accepts your note with a smile.\n\"Friends first, okay?\" she says. You agree.",
 		"talks": [
 			{
 				"q": "Young man! Why are you wandering outside class?"

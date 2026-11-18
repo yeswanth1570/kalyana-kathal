@@ -43,6 +43,7 @@ jobs:
         run: |
           python3 -m unittest discover -s games/life-quest/backend/tests -v
           node --check games/life-quest/web/chat.js
+          node --test games/life-quest/tests/chat.test.cjs
 
       - name: Test Life Quest gameplay and all five acts
         run: |
@@ -57,8 +58,8 @@ jobs:
       - name: Export Life Quest mobile browser game
         run: |
           mkdir -p build/web/life-quest
-          godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/game-v2.html
-          cp build/web/life-quest/game-v2.html build/web/life-quest/index.html
+          godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/game-v3.html
+          cp build/web/life-quest/game-v3.html build/web/life-quest/index.html
 
       - name: Copy mobile conversation UI
         run: |
@@ -72,8 +73,8 @@ jobs:
           test -s build/web/life-quest/index.html
           test -s build/web/life-quest/chat.js
           test -s build/web/life-quest/chat.css
-          test -s build/web/life-quest/game-v2.pck
-          test -s build/web/life-quest/game-v2.wasm
+          test -s build/web/life-quest/game-v3.pck
+          test -s build/web/life-quest/game-v3.wasm
           if grep -q '\$GODOT_' build/web/life-quest/index.html; then exit 1; fi
           touch build/web/.nojekyll
 

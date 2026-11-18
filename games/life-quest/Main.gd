@@ -4,6 +4,8 @@ const Story = preload("res://Stages.gd")
 const DISPLAY_FONT: Font = preload("res://fonts/CinzelDecorative-Bold.ttf")
 const COVER: Texture2D = preload("res://art/cover-v2.png")
 const HERO_SHEET: Texture2D = preload("res://art/hero_sheet-v2.png")
+const HERO_RUN: Texture2D = preload("res://art/hero-run-alpha-v3.png")
+const MASTER_WALK: Texture2D = preload("res://art/master-walk-v3.png")
 const CAST_SHEET: Texture2D = preload("res://art/cast_sheet-v2.png")
 const SCENERY: Array[Texture2D] = [preload("res://art/school-v2.png"),preload("res://art/college-v2.png"),preload("res://art/office-v2.png"),preload("res://art/family-v2.png"),preload("res://art/wedding-v2.png")]
 const INK := Color("203936")
@@ -23,7 +25,7 @@ var completed := false
 var gentle := true
 var sound_on := true
 var reduce_motion := false
-var auto_fire := true
+var auto_fire := false
 var age := 0.0
 var elapsed := 0.0
 var player := Vector2.ZERO
@@ -35,6 +37,20 @@ var resistance := 100.0
 var approval := 20
 var charm := 0.0
 var shot_clock := 0.0
+var attack_pose := 0.0
+var landing_pose := 0.0
+var run_cycle := 0.0
+var windup := 0.0
+var master_x := 0.0
+var master_facing := 1.0
+var master_turn := 0.0
+var awareness := 0.0
+var hidden_in_cover := false
+var caught_timer := 0.0
+var offline_run := false
+var dialogue_id := 0
+var notice := ""
+var notice_time := 0.0
 var hazard_clock := 1.5
 var hazard_count := 0
 var invincible := 0.0
@@ -144,7 +160,7 @@ func _load_progress() -> void:
 		gentle = bool(cfg.get_value("settings", "gentle", true))
 		sound_on = bool(cfg.get_value("settings", "sound", true))
 		reduce_motion = bool(cfg.get_value("settings", "reduce_motion", false))
-		auto_fire = bool(cfg.get_value("settings", "auto_fire", true))
+		auto_fire = bool(cfg.get_value("settings", "auto_fire", false)) if int(cfg.get_value("settings", "controls_version", 0)) >= 3 else false
 
 func _save_progress() -> void:
 	var cfg := ConfigFile.new()
@@ -154,6 +170,7 @@ func _save_progress() -> void:
 	cfg.set_value("settings", "sound", sound_on)
 	cfg.set_value("settings", "reduce_motion", reduce_motion)
 	cfg.set_value("settings", "auto_fire", auto_fire)
+	cfg.set_value("settings", "controls_version", 3)
 	var error := cfg.save(SAVE)
 	if error != OK:
 		push_warning("Progress could not be saved on this device (%s)." % error)
@@ -162,14 +179,15 @@ func floor_y() -> float:
 	return viewport_size.y * 0.72 if portrait else viewport_size.y - 172.0
 
 func boss_position() -> Vector2:
-	return Vector2(viewport_size.x - 150, floor_y())
+	return Vector2(master_x if stage == 0 else viewport_size.x - 150, floor_y())
 
 func _resize() -> void:
 	var old_floor := floor_y()
 	viewport_size = get_viewport_rect().size
 	portrait = viewport_size.y > viewport_size.x
 	ui_scale = 2.0 if portrait else 1.0
-	player.x = clampf(player.x, 50, viewport_size.x - 290)
+	player.x = clampf(player.x, 50, viewport_size.x - (55 if stage == 0 else 290))
+	master_x = clampf(master_x, viewport_size.x * 0.40, viewport_size.x * 0.80)
 	player.y = floor_y() + minf(player.y - old_floor, 0)
 	shots.clear()
 	hazards.clear()
@@ -370,12 +388,13 @@ func _show_intro() -> void:
 	_label(col, act.name, 46)
 	_label(col, act.place + "  ·  " + act.boss, 20, Color("b9d0ba"))
 	_label(col, act.intro, 25)
-	_label(col, "Lower the resistance shield to open three conversations.\nEarn 72 trust to clear this act. Kind words change the fight.", 20)
+	_label(col, "Carry the note to the gate on the right. Stay out of Sundaram’s gaze.\nHold HIDE behind a book cart; SNEAK quietly between patrol turns." if stage == 0 else "Lower the resistance shield to open three conversations.\nEarn 72 trust to clear this act. If Qwen is offline, conversations are skipped.", 20)
 	_label(col, "DIRECTOR'S NOTE: " + act.hint, 18, GOLD)
 	_button(col, "Action!  >", _start_stage, true).grab_focus()
 	_button(col, "<  All acts", _show_map)
 
 func _start_stage() -> void:
+	qwen.cancel()
 	chat_only = false
 	state = "playing"
 	phase = 0
@@ -384,11 +403,25 @@ func _start_stage() -> void:
 	resistance = 100
 	approval = 20
 	charm = 0
-	player = Vector2(160, floor_y())
+	player = Vector2(80 if stage == 0 else 160, floor_y())
 	velocity = Vector2.ZERO
 	facing = 1
 	shot_clock = 0
-	hazard_clock = 1.8
+	attack_pose = 0
+	landing_pose = 0
+	run_cycle = 0
+	windup = 0
+	master_x = viewport_size.x * 0.57
+	master_facing = 1
+	master_turn = 0
+	awareness = 0
+	hidden_in_cover = false
+	caught_timer = 0
+	offline_run = false
+	notice = ""
+	notice_time = 0
+	_clear_input()
+	hazard_clock = 2.4
 	hazard_count = 0
 	elapsed = 0
 	invincible = 1.5
@@ -463,6 +496,16 @@ func _make_hud() -> void:
 		"jump": Rect2(viewport_size.x-2*b-30,y,b,h),
 		"fire": Rect2(viewport_size.x-b-22,y,b,h)
 	}
+	if stage == 0:
+		heal_button.hide()
+		talk_button.hide()
+		charm_bar.hide()
+		boss_label.text = "SUNDARAM’S AWARENESS  /  STAY UNSEEN"
+		var cell_width := (viewport_size.x - 76) / 5.0
+		control_rects.clear()
+		var actions := ["left", "right", "dash", "sneak", "hide"]
+		for i in range(actions.size()):
+			control_rects[actions[i]] = Rect2(22+i*(cell_width+8), y, cell_width, h)
 	_update_hud()
 
 func _compact_button(button: Button) -> void:
@@ -479,6 +522,13 @@ func _compact_button(button: Button) -> void:
 func _update_hud() -> void:
 	if not is_instance_valid(hud): return
 	hp_label.text = "MURUGAN   ·   HP %d / %d" % [hp, max_hp]
+	if stage == 0:
+		progress_label.text = "ACT 01 / 05   ·   DELIVER THE NOTE  →  GATE"
+		resistance_bar.value = awareness
+		resistance_bar.add_theme_stylebox_override("fill", _style(ROSE if awareness > 60 else GOLD, GOLD, 4))
+		status_label.text = "HIDDEN · wait for him to turn" if hidden_in_cover else ("Spotted! Find cover!" if awareness > 5 else "Hold HIDE near carts · SNEAK between patrols")
+		if notice_time > 0: status_label.text = notice
+		return
 	progress_label.text = "ACT %02d / 05   %s   ·   TRUST %d/72   ·   TALK %d/3" % [stage+1, Story.ACTS[stage].place, approval, mini(phase+1,3)]
 	resistance_bar.value = resistance
 	charm_bar.value = charm
@@ -486,7 +536,8 @@ func _update_hud() -> void:
 	talk_button.text = "Speak now [R]" if charm >= 100 else "Speak · parry for gold [R]"
 	heal_button.disabled = used_tiffin or hp >= max_hp
 	heal_button.text = "Tiffin used" if used_tiffin else "Tiffin +2 HP [H]"
-	status_label.text = "Pink petals can be parried · %s" % ("Auto letters ON" if auto_fire else "Hold LETTER / J to fire")
+	status_label.text = "Windup! Get ready to dodge" if windup > 0 else ("Pink petals can be parried · %s" % ("Auto letters ON" if auto_fire else "Hold LETTER / J to fire"))
+	if notice_time > 0: status_label.text = notice
 
 func _process(delta: float) -> void:
 	var dt := minf(delta, 0.04)
@@ -507,28 +558,43 @@ func _tick(dt: float) -> void:
 	parry_time = maxf(0, parry_time - dt)
 	parry_cooldown = maxf(0, parry_cooldown - dt)
 	shot_clock -= dt
+	attack_pose = maxf(0, attack_pose-dt)
+	landing_pose = maxf(0, landing_pose-dt)
+	notice_time = maxf(0, notice_time-dt)
 	var axis := 0.0
 	if _held("left") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): axis -= 1
 	if _held("right") or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): axis += 1
 	if axis != 0 and dash_time <= 0: facing = axis
+	var old_x := player.x
 	if dash_time > 0:
 		player.x += facing * 800 * dt
 		if int(age * 50) % 3 == 0: _burst(player + Vector2(0,-35), TEAL, 1)
 	else:
-		player.x += axis * 270 * dt
-	player.x = clampf(player.x, 48, viewport_size.x - 295)
+		player.x += axis * (125 if stage == 0 and _sneaking() else 270) * dt
+	player.x = clampf(player.x, 48, viewport_size.x - (55 if stage == 0 else 295))
+	run_cycle += absf(player.x-old_x) / 30.0
 	if player.y < floor_y() or velocity.y < 0:
 		velocity.y += 1250 * dt
 		player.y += velocity.y * dt
 		if player.y >= floor_y():
 			player.y = floor_y()
 			velocity.y = 0
+			landing_pose = 0.16
+			_burst(player, Color("d5c8a8"), 4)
+	if stage == 0:
+		_tick_stealth(dt)
+		_update_hud()
+		return
 	if (auto_fire or _held("fire") or Input.is_physical_key_pressed(KEY_J) or Input.is_physical_key_pressed(KEY_X)) and shot_clock <= 0:
 		_fire()
-	hazard_clock -= dt
-	if hazard_clock <= 0:
-		_spawn_pattern()
-		hazard_clock = maxf(0.65, (1.5 if gentle else 1.12) - phase * 0.16 - stage * 0.05) / attack_speed
+	if windup > 0:
+		windup = maxf(0, windup-dt)
+		if windup <= 0:
+			_spawn_pattern()
+			hazard_clock = maxf(1.0, (1.8 if gentle else 1.45) - phase * 0.12) / attack_speed
+	else:
+		hazard_clock -= dt
+		if hazard_clock <= 0: windup = 0.65
 	for i in range(shots.size()-1,-1,-1):
 		var bullet: Dictionary = shots[i]
 		bullet.p += bullet.v * dt
@@ -539,7 +605,7 @@ func _tick(dt: float) -> void:
 			charm = minf(100, charm + 2)
 			_burst(bullet.p, ROSE, 5)
 			shots.remove_at(i)
-		elif bullet.p.x > viewport_size.x + 30 or bullet.p.y < -40 or bullet.p.y > viewport_size.y:
+		elif bullet.p.x > viewport_size.x + 30 or bullet.p.x < -30 or bullet.p.y < -40 or bullet.p.y > viewport_size.y:
 			shots.remove_at(i)
 	for i in range(hazards.size()-1,-1,-1):
 		if state != "playing": break
@@ -569,10 +635,51 @@ func _tick(dt: float) -> void:
 		_open_dialogue()
 	_update_hud()
 
+func _sneaking() -> bool:
+	return _held("sneak") or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
+
+func _cover_positions() -> Array[float]:
+	return [viewport_size.x * 0.25, viewport_size.x * 0.48, viewport_size.x * 0.72]
+
+func _tick_stealth(dt: float) -> void:
+	caught_timer = maxf(0, caught_timer-dt)
+	hidden_in_cover = false
+	var hiding := _held("hide") or Input.is_physical_key_pressed(KEY_K)
+	if hiding and player.y >= floor_y()-1 and dash_time <= 0:
+		for x in _cover_positions():
+			if absf(player.x-x) < 55: hidden_in_cover = true
+	if master_turn > 0:
+		master_turn = maxf(0, master_turn-dt)
+		if master_turn <= 0: master_facing *= -1
+	else:
+		master_x += master_facing * 78 * dt
+		if master_x >= viewport_size.x*0.80 or master_x <= viewport_size.x*0.40:
+			master_x = clampf(master_x, viewport_size.x*0.40, viewport_size.x*0.80)
+			master_turn = 1.25
+	var distance := player.x-master_x
+	var visible := not hidden_in_cover and ((distance*master_facing > 0 and absf(distance) < 300) or absf(distance)<52)
+	if caught_timer <= 0:
+		awareness = clampf(awareness + (62.0 if visible else -38.0)*dt, 0, 100)
+	if awareness >= 100:
+		_take_hit()
+		if state != "playing": return
+		player = Vector2(80, floor_y())
+		velocity = Vector2.ZERO
+		dash_time = 0
+		awareness = 0
+		caught_timer = 1.6
+		notice = "Caught! One heart lost · try the patrol gap"
+		notice_time = 2.5
+		_clear_input()
+	if player.x >= viewport_size.x-75 and awareness < 80:
+		_clear_stage()
+
 func _fire() -> void:
-	shot_clock = 0.23
-	var origin := player + Vector2(65,-108)
-	var aim := Vector2(1,0)
+	if stage == 0 or state != "playing": return
+	shot_clock = 0.34
+	attack_pose = 0.18
+	var origin := player + Vector2(65*facing,-108)
+	var aim := Vector2(facing,0)
 	# W/S or arrow keys allow 8-direction manual aiming while firing.
 	var up := Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)
 	var down := Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
@@ -651,7 +758,7 @@ func _take_hit() -> void:
 		_show_defeat()
 
 func _manual_talk() -> void:
-	if state == "playing" and charm >= 100:
+	if stage != 0 and state == "playing" and charm >= 100:
 		charm = 0
 		resistance = minf(resistance, THRESHOLDS[phase])
 		_open_dialogue()
@@ -659,6 +766,9 @@ func _manual_talk() -> void:
 func _open_dialogue() -> void:
 	if state != "playing": return
 	state = "dialogue"
+	dialogue_id += 1
+	_clear_input()
+	windup = 0
 	shots.clear()
 	hazards.clear()
 	chat_messages.assign(agent_histories.get(_agent_name(), []))
@@ -668,7 +778,11 @@ func _open_dialogue() -> void:
 	chat_draft = ""
 	chat_pending = false
 	chat_messages.append({"role":"assistant","content":Story.ACTS[stage].talks[phase].q})
+	if not OS.has_feature("web") and (qwen.endpoint.is_empty() or qwen.access_code.is_empty()):
+		_skip_dialogue("Qwen is not connected")
+		return
 	_show_dialogue()
+	if not OS.has_feature("web"): qwen.check_connection()
 
 func _agent_name() -> String:
 	return ["Sundaram", "Sharmila", "Karthik", "Amma & Appa", "Sharmila"][stage]
@@ -677,7 +791,7 @@ func _show_dialogue() -> void:
 	state = "dialogue"
 	if OS.has_feature("web"):
 		_clear_screen()
-		var payload := {"actor":_agent_name(),"stage":stage,"phase":phase,"approval":approval,"messages":chat_messages,"turns":chat_turns,"hint":Story.ACTS[stage].hint,"chat_only":chat_only}
+		var payload := {"id":dialogue_id,"actor":_agent_name(),"stage":stage,"phase":phase,"approval":approval,"messages":chat_messages,"turns":chat_turns,"hint":Story.ACTS[stage].hint,"chat_only":chat_only}
 		JavaScriptBridge.eval("window.kalyanaChat.open(%s)" % JSON.stringify(payload))
 		return
 	var col := _modal(960)
@@ -707,6 +821,7 @@ func _show_dialogue() -> void:
 	_button(row,"Connect PC",_show_agent_connection)
 	chat_back = _button(col,"Back to title  >" if chat_only else "Back to the scene  >",_finish_chat)
 	chat_back.disabled = chat_pending or (chat_turns==0 and not chat_only)
+	_button(col, "Skip conversation · keep playing", _skip_dialogue)
 	_label(col,"Replies are generated by your PC's Qwen model. No preset reply choices.",16,Color("afc4b2"))
 	scroll.set_deferred("scroll_vertical",100000)
 
@@ -723,13 +838,12 @@ func _submit_text(text: String) -> void:
 	chat_draft = clean
 	chat_error = ""
 	chat_pending = true
-	qwen.send_message(clean,stage,phase,approval,chat_messages)
 	_show_dialogue()
+	qwen.send_message(clean,stage,phase,approval,chat_messages)
 
 func _agent_failed(message: String) -> void:
 	chat_pending=false
-	chat_error=message
-	if state=="dialogue": _show_dialogue()
+	if state=="dialogue": _skip_dialogue(message)
 
 func _apply_agent_reply(data: Dictionary) -> void:
 	if state != "dialogue": return
@@ -751,6 +865,20 @@ func _apply_agent_reply(data: Dictionary) -> void:
 	_sound("parry" if last_score>0 else "hit")
 	if not OS.has_feature("web"): _show_dialogue()
 
+func _skip_dialogue(_reason: String = "Conversation skipped") -> void:
+	if state != "dialogue": return
+	qwen.cancel()
+	chat_pending = false
+	if OS.has_feature("web"): JavaScriptBridge.eval("window.kalyanaChat.hide()")
+	if chat_only:
+		chat_only = false
+		_show_title()
+		return
+	offline_run = true
+	notice = "Conversation skipped · continue the story"
+	notice_time = 4.0
+	_continue_after_reply()
+
 func _finish_chat() -> void:
 	if chat_pending or (chat_turns==0 and not chat_only):return
 	if OS.has_feature("web"):JavaScriptBridge.eval("window.kalyanaChat.hide()")
@@ -764,11 +892,13 @@ func _web_chat_event(args: Array) -> void:
 	if args.is_empty():return
 	var data = JSON.parse_string(str(args[0]))
 	if not data is Dictionary:return
+	if state != "dialogue" or int(data.get("id", -1)) != dialogue_id: return
 	match str(data.get("kind","")):
 		"reply":
 			chat_draft=str(data.get("user_text",""))
 			_apply_agent_reply(data)
 		"continue": _finish_chat()
+		"skip": _skip_dialogue(str(data.get("reason", "Conversation skipped")))
 
 func _show_agent_connection() -> void:
 	if OS.has_feature("web"):
@@ -796,7 +926,7 @@ func _show_agent_connection() -> void:
 	_label(col,"The PC must stay on with Ollama and the relay running. The code stays in this session.",18)
 
 func _continue_after_reply() -> void:
-	if phase == 2 and approval >= 72:
+	if phase == 2 and (approval >= 72 or offline_run):
 		_clear_stage()
 		return
 	if phase < 2:
@@ -806,7 +936,9 @@ func _continue_after_reply() -> void:
 		resistance = 30
 	state = "playing"
 	invincible = 1.5
-	hazard_clock = 1.5
+	hazard_clock = 2.4
+	windup = 0
+	_clear_input()
 	shots.clear()
 	hazards.clear()
 	_make_hud()
@@ -823,8 +955,9 @@ func _show_clear() -> void:
 	state = "clear"
 	var col := _modal()
 	_label(col, "ACT %02d  /  THAT'S A WRAP!" % (stage+1), 18, GOLD)
-	_label(col, "A little less drama.\nA little more trust.", 38)
+	_label(col, "The note made it!\nA perfect little escape." if stage == 0 else "A little less drama.\nA little more trust.", 38)
 	_label(col, Story.ACTS[stage].ending, 24)
+	if offline_run: _label(col, "CONVERSATIONS SKIPPED · NO QWEN TRUST AWARDED", 17, GOLD)
 	_label(col, "TRUST %d  ·  %d HEARTS LEFT  ·  %ds  ·  PROGRESS SAVED" % [approval,hp,int(elapsed)], 17, Color("b6cbb6"))
 	_button(col, "The next reel  >" if stage < 4 else "Exchange the garlands  >", _next_stage, true).grab_focus()
 	_button(col, "All acts", _show_map)
@@ -850,7 +983,7 @@ func _show_defeat() -> void:
 	var col := _modal()
 	_label(col, "CUT!  /  ONE MORE TAKE", 18, GOLD)
 	_label(col, "Even heroes need a retake.", 38)
-	_label(col, "Jump over low projectiles. Dash through danger.\nParry pink petals to fill the gold Speak meter.\nYour tiffin restores two hearts once per act.", 24)
+	_label(col, "Wait for Sundaram to look away. Hold HIDE behind carts.\nHis gold cone shows where he can see; the meter warns before capture." if stage == 0 else "Watch for the windup. Jump over low projectiles; dash through danger.\nParry pink petals. Your tiffin restores two hearts once per act.", 24)
 	_button(col, "Retake this act  >", _start_stage, true).grab_focus()
 	_button(col, "Choose an act", _show_map)
 	_button(col, "Settings", _open_settings)
@@ -930,9 +1063,9 @@ func _show_help() -> void:
 	var col := _modal(900)
 	_label(col,"THE HERO'S HANDBOOK",18,GOLD)
 	_label(col,"A little action. A lot of heart.",36)
-	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nAuto letters are on by default. Multiple fingers work together.",23)
+	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nHold LETTER to throw; auto letters are optional in Settings. Multiple fingers work together.",23)
 	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · Type freely to talk to the Qwen character",21)
-	_label(col,"Lower the shield to 70%, 40% and 12% to talk.\nReach 72 trust after three talks to clear the act.\nPink petals can be parried: fill gold for an early conversation.",23)
+	_label(col,"SCHOOL: reach the gate unseen. Hold HIDE / K at carts.\nHold SNEAK / S to move quietly; watch the master’s turning cue.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.",23)
 	_label(col,"A short dash makes you invincible. A tiffin heals once per act.\nOn a phone, landscape gives you more room to dodge.",21,Color("b9cbb6"))
 	_button(col,"Got it  >",_settings_back,true).grab_focus()
 
@@ -1017,16 +1150,22 @@ func _draw() -> void:
 	var wobble := Vector2(sin(age*78)*shake,cos(age*69)*shake) if not reduce_motion else Vector2.ZERO
 	draw_set_transform(wobble)
 	_background()
+	if stage == 0 and state == "playing": _draw_stealth_scene()
 	if state != "title":
 		var animate := state == "playing" and (_held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT))
 		var actor_scale := 1.55 if portrait else 1.0
 		if invincible <= 0 or state != "playing" or int(age*14)%2==0:
 			_character(player,"hero",actor_scale,animate)
 		var kind: String = ["teacher","senior","manager","father","aunty"][stage]
-		_character(boss_position(),kind,actor_scale,false)
+		_character(boss_position(),kind,actor_scale,stage == 0 and state == "playing" and master_turn <= 0)
 		if stage == 3: _character(boss_position()+Vector2(87,0),"aunty",actor_scale*0.85,false)
 		if stage == 1 or stage == 4:
 			_character(boss_position()+Vector2(94,0),"sharmila",actor_scale*0.85,false)
+	if stage == 0 and state == "playing": _draw_cover_props()
+	if windup > 0 and state == "playing":
+		var cue := boss_position()+Vector2(0,-205* (1.3 if portrait else 1.0))
+		draw_circle(cue,24,GOLD)
+		_text("!",cue+Vector2(0,9),30,INK,true)
 	for shot in shots: _envelope(shot.p,ROSE,1)
 	for hazard in hazards: _draw_hazard(hazard)
 	if parry_time > 0 and state == "playing":
@@ -1078,31 +1217,106 @@ func _background() -> void:
 			draw_circle(Vector2(px,py),1.5,Color(1,0.85,0.5,0.16))
 
 func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
-	var bob := sin(age*(12 if walking else 2.4))*1.8 if not reduce_motion else 0.0
-	var tex: Texture2D = HERO_SHEET if kind=="hero" else CAST_SHEET
-	var grid := Vector2(4,4) if kind=="hero" else Vector2(3,2)
+	var using_run := kind == "hero" and (walking or player.y < floor_y()-1) and attack_pose <= 0
+	var master_walking := kind == "teacher" and stage == 0 and walking
+	var tex: Texture2D = (HERO_RUN if using_run else HERO_SHEET) if kind=="hero" else (MASTER_WALK if master_walking else CAST_SHEET)
+	var grid := Vector2(4,4) if kind=="hero" else (Vector2(2,2) if master_walking else Vector2(3,2))
 	var cell := tex.get_size()/grid
 	var column := 0
 	var row := 0
 	var flip := false
+	var pivot := 0.5
+	var motion := Vector2.ONE
+	var tilt := 0.0
+	var bob := 0.0
 	if kind=="hero":
 		row = [0,1,2,2,3][stage]
-		if walking:column = 1+int(age*9)%2
-		if state=="playing" and shot_clock>0.15:column=3
-		flip = facing<0 and walking and column!=3
+		flip = facing < 0
+		if walking:
+			column = int(run_cycle)%4 if using_run else 0
+			pivot = 0.53
+			if not reduce_motion:
+				bob = -absf(sin(run_cycle*PI))*3
+				tilt = sin(run_cycle*PI)*0.025
+		if player.y < floor_y()-1:
+			column = 3 if using_run else 2
+			pivot = 0.53 if using_run else 0.46
+			if not reduce_motion: motion = Vector2(0.94,1.06)
+		if attack_pose > 0 and state == "playing":
+			column = 3
+			pivot = 0.29 # Throw art has an extended arm; anchor the body, not the cell.
+			if not reduce_motion: tilt = -facing*0.06*attack_pose/0.18
+		if not reduce_motion:
+			if dash_time > 0: motion = Vector2(1.17,0.85)
+			elif landing_pose > 0: motion = Vector2(1+landing_pose*0.8,1-landing_pose*0.8)
+			elif hidden_in_cover and stage == 0: motion = Vector2(1.03,0.72)
+			elif not walking: motion = Vector2(1+sin(age*3)*0.012,1-sin(age*3)*0.012)
+			if flashes > 0:
+				tilt = -facing*0.12
+				motion = Vector2(1.06,0.94)
 	else:
 		var index: int = {"teacher":0,"senior":1,"manager":2,"father":3,"aunty":4,"sharmila":5}.get(kind,5)
 		column = index%3
 		row = index/3
 		flip = kind in ["teacher","senior","father","aunty"]
+		if kind == "teacher" and stage == 0: flip = master_facing < 0
+		if master_walking:
+			var frame := int(age*6)%4
+			column = frame%2
+			row = frame/2
+		if not reduce_motion:
+			motion = Vector2(1+sin(age*3)*0.012,1-sin(age*3)*0.012)
+			if walking:
+				tilt = sin(age*9)*0.045
+				bob = -absf(sin(age*9))*3
+			if windup > 0: motion = Vector2(1.08,0.92)
+			if boss_flash > 0: tilt = 0.10
 	var height := 176.0*scale_factor
 	var size := Vector2(cell.x/cell.y*height,height)
 	var shadow_scale := clampf(1.0-(floor_y()-pos.y)/400.0,0.3,1.0)
 	_oval(Vector2(pos.x,floor_y()+5),Vector2(30*scale_factor*shadow_scale,7*scale_factor),Color(0.015,0.06,0.045,0.25*shadow_scale))
-	draw_set_transform(pos+Vector2(0,bob),0,Vector2(-1 if flip else 1,1))
+	draw_set_transform(pos+Vector2(0,bob),tilt,Vector2(-motion.x if flip else motion.x,motion.y))
 	var tint := Color(1.5,1.4,1.1,1) if boss_flash>0 and kind!="hero" else Color.WHITE
-	draw_texture_rect_region(tex,Rect2(Vector2(-size.x/2,-size.y*0.97),size),Rect2(Vector2(column,row)*cell,cell),tint)
+	if kind == "hero" and hidden_in_cover and stage == 0: tint.a = 0.55
+	# Crop the envelope painted into the throw pose; the live projectile animates it.
+	var visible_width := 0.78 if kind == "hero" and not using_run and column == 3 else 1.0
+	var destination := Rect2(Vector2(-size.x*pivot,-size.y*0.97),Vector2(size.x*visible_width,size.y))
+	var source := Rect2(Vector2(column,row)*cell+Vector2(2,2),Vector2((cell.x-4)*visible_width,cell.y-4))
+	if kind == "hero" and dash_time > 0 and not reduce_motion:
+		for i in [3,2,1]:
+			var trail := destination
+			trail.position.x -= 22*i
+			draw_texture_rect_region(tex,trail,source,Color(0.65,0.9,0.8,0.11))
+	# Inset source cells to prevent neighbouring poses bleeding through the atlas.
+	draw_texture_rect_region(tex,destination,source,tint)
 	draw_set_transform(Vector2.ZERO)
+
+func _draw_stealth_scene() -> void:
+	var eye := boss_position()+Vector2(0,-112)
+	var color := Color(1.0,0.93,0.65,0.30) if awareness < 60 else Color(0.85,0.22,0.24,0.35)
+	draw_colored_polygon(PackedVector2Array([eye,eye+Vector2(master_facing*300,-80),eye+Vector2(master_facing*300,112)]),color)
+	draw_line(eye,eye+Vector2(master_facing*300,112),INK,5,true)
+	draw_line(eye,eye+Vector2(master_facing*300,112),GOLD,2,true)
+	draw_line(eye,eye+Vector2(master_facing*300,-80),GOLD,2,true)
+	var cue := boss_position()+Vector2(0,-205*(1.3 if portrait else 1.0))
+	_text("TURNING…" if master_turn > 0 else ("!" if awareness > 5 else "PATROL"),cue,22,ROSE if awareness > 60 else PAPER,true)
+	var gate := Vector2(viewport_size.x-60,floor_y())
+	draw_style_box(_style(Color("224c42"),GOLD,14),Rect2(gate+Vector2(-38,-175),Vector2(76,170)))
+	_text("EXIT",gate+Vector2(0,-133),19,PAPER,true)
+	_text("→",gate+Vector2(0,-88),40,GOLD,true)
+	if hidden_in_cover: _text("HIDDEN",player+Vector2(0,-185),20,GOLD,true)
+
+func _draw_cover_props() -> void:
+	for x in _cover_positions():
+		var base := Vector2(x,floor_y())
+		_oval(base+Vector2(0,4),Vector2(66,10),Color(0.03,0.06,0.04,0.3))
+		draw_style_box(_style(Color("78533d"),INK,6),Rect2(base+Vector2(-59,-88),Vector2(118,76)))
+		for i in range(4):
+			var c: Color = [TEAL,ROSE,GOLD,PAPER][i]
+			draw_style_box(_style(c,INK,2),Rect2(base+Vector2(-53+i*27,-116-(i%2)*9),Vector2(24,42+(i%2)*9)))
+		draw_line(base+Vector2(-68,-77),base+Vector2(68,-77),GOLD,6)
+		for dx in [-44,44]: draw_circle(base+Vector2(dx,-8),9,INK)
+		_text("HOLD HIDE",base+Vector2(0,-38),14,PAPER,true)
 
 func _background_legacy() -> void:
 	var w := viewport_size.x
@@ -1310,7 +1524,7 @@ func _draw_hazard(hazard: Dictionary) -> void:
 			if hazard.kind == "ticket": _text("BUG",p+Vector2(-12,5),11,ROSE)
 
 func _draw_controls() -> void:
-	var labels := {"left":"MOVE", "right":"MOVE", "dash":"DASH", "parry":"PARRY", "jump":"JUMP", "fire":"LETTER"}
+	var labels := {"left":"MOVE", "right":"MOVE", "dash":"DASH", "parry":"PARRY", "jump":"JUMP", "fire":"LETTER", "sneak":"SNEAK", "hide":"HIDE"}
 	for action in control_rects:
 		var rect: Rect2 = control_rects[action]
 		var bg := Color("213e37")
@@ -1333,6 +1547,11 @@ func _draw_controls() -> void:
 		elif action=="jump":
 			draw_line(center+Vector2(0,14)*ui_scale,center+Vector2(0,-13)*ui_scale,PAPER,4*ui_scale,true)
 			draw_polyline(PackedVector2Array([center+Vector2(-12,-2)*ui_scale,center+Vector2(0,-14)*ui_scale,center+Vector2(12,-2)*ui_scale]),PAPER,4*ui_scale,true)
+		elif action=="hide":
+			draw_arc(center,icon_size,0,PI,16,GOLD,3*ui_scale,true)
+			draw_line(center-Vector2(icon_size,0),center+Vector2(icon_size,0),GOLD,3*ui_scale,true)
+		elif action=="sneak":
+			_oval(center,Vector2(icon_size,icon_size*0.4),PAPER)
 		elif action=="parry":_heart(center,17*ui_scale,Color("ed9cab"))
 		else:_envelope(center,PAPER,1.35*ui_scale)
 		var label: String = labels[action]

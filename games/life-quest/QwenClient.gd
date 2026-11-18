@@ -6,12 +6,30 @@ var endpoint := ""
 var access_code := ""
 var busy := false
 var request: HTTPRequest
+var health: HTTPRequest
 
 func _ready() -> void:
 	request = HTTPRequest.new()
 	request.timeout = 85
 	add_child(request)
 	request.request_completed.connect(_completed)
+	health = HTTPRequest.new()
+	health.timeout = 4
+	add_child(health)
+	health.request_completed.connect(func(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray):
+		var data = JSON.parse_string(body.get_string_from_utf8())
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200 or not data is Dictionary or not data.get("ready",false):
+			failed.emit("Qwen is unavailable"))
+
+func cancel() -> void:
+	request.cancel_request()
+	health.cancel_request()
+	busy = false
+
+func check_connection() -> void:
+	health.cancel_request()
+	var error := health.request(endpoint.trim_suffix("/")+"/api/health",PackedStringArray(["Authorization: Bearer "+access_code]))
+	if error != OK: failed.emit("Qwen is unavailable")
 
 func send_message(text: String, stage: int, phase: int, approval: int, history: Array) -> void:
 	if busy:

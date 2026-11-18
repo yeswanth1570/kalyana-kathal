@@ -27,7 +27,8 @@ func run() -> void:
 	game.stage=1
 	game._start_stage()
 	await capture("college-landscape")
-	game._open_dialogue()
+	game.chat_messages.assign([{"role":"assistant","content":"Tell me about your idea for the college festival."}])
+	game._show_dialogue()
 	await capture("dialogue-landscape")
 	for i in [0,2,3,4]:
 		game.stage=i
@@ -45,8 +46,35 @@ func run() -> void:
 	game.stage=1
 	game._start_stage()
 	await capture("college-portrait")
-	game._open_dialogue()
+	game.chat_messages.assign([{"role":"assistant","content":"Tell me about your idea for the college festival."}])
+	game._show_dialogue()
 	await capture("dialogue-portrait")
+	game.stage=0
+	game._start_stage()
+	await capture("stealth-portrait")
+	game.player.x=game._cover_positions()[1]
+	game.held["hide"]=true
+	game._tick(.016)
+	await capture("hidden-portrait")
+	root.size=Vector2i(1100,700)
+	await process_frame
+	game._resize()
+	game.stage=1
+	game._start_stage()
+	game.invincible=0
+	game.held["right"]=true
+	for i in range(8):
+		game._tick(.05)
+		await capture("motion-run-%02d"%i)
+	game._jump()
+	game._tick(.12)
+	await capture("motion-jump")
+	game._dash()
+	await capture("motion-dash")
+	game._fire()
+	await capture("motion-throw")
+	game.windup=.5
+	await capture("attack-warning")
 	game.queue_free()
 	await process_frame
 	quit()

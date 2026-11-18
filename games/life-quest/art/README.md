@@ -14,3 +14,14 @@ The direction combines gouache texture, hand-inked animation silhouettes, warm T
 - `cast_sheet-v2.png`: Sundaram, Kumar, Karthik, Appa, Amma and Sharmila in a 3 by 2 grid.
 
 Production code is in `Main.gd`. The generated atlas grid is interpreted at runtime without modifying the source PNGs. The live Qwen conversation and gameplay state logic are separate from artwork. Original procedural drawing remains as `_background_legacy` and `_character_legacy`; no original project assets were deleted.
+
+
+## v3 character motion
+
+Generated with the built-in image generation tool, using the existing original sprites as identity and costume references. The art direction takes broad 1930s cartoon movement cues from Cuphead while retaining the original Tamil cast. No franchise sprites were used.
+
+- `hero-run-alpha-v3.png`: transparent 4 by 4 atlas, four consecutive run poses for each of the four original outfits. The first generated sheet had a partial white matte; a second image edit removed it. The unused first variant is outside the repository.
+- `master-walk-v3.png`: transparent 2 by 2 patrol walk cycle for Sundaram, matching his original cast portrait.
+- Exact generation and alpha-removal prompts: [motion-prompts-v3.json](motion-prompts-v3.json).
+
+Existing v2 art is preserved. The renderer anchors the body across frame changes and adds landing squash, dash stretch and trails, breath, hit recoil and throw recovery. Run poses are selected by distance travelled; jump and attack states have explicit priority. Atlas source rectangles have a two-pixel inset against frame bleed. Reduce Motion disables the added deformation and trails.

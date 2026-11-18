@@ -6,13 +6,13 @@ Play at **https://yeswanth1570.github.io/kalyana-kathal/life-quest/**. Tap Play,
 
 ## What is playable
 
-Five complete encounters: School, College, Office, Family and Wedding. Each has a setting, character art, different projectiles, three conversations, consequences for replies, a recoverable trust loop, a stage ending and an unlockable next act. Murugan changes outfits as the story advances. Jump, dash with a cooldown, parry pink petals, throw letters, use one healing tiffin, and pause at any time. The v2 art pass adds painted stage scenery, a cinematic cover, transparent character atlases with four outfits and walking/throwing frames, illustrated scene thumbnails, updated typography and touch icons. Confetti and original music are included. The previous procedural art remains in the source as a fallback. See [art direction and prompts](art/README.md).
+Five complete encounters: School, College, Office, Family and Wedding. School is a stealth encounter: carry the note to the exit, watch Sundaram’s patrol and turning cue, and hold Hide behind book carts to break detection. Capture costs one heart and resets to safety; the master never throws projectiles. The four later acts have different projectiles, three conversations, consequences for replies, a recoverable trust loop, a stage ending and an unlockable next act. Murugan changes outfits as the story advances. Jump, dash with a cooldown, parry pink petals, throw letters, use one healing tiffin, and pause at any time. The v2 art pass adds painted stage scenery, a cinematic cover, transparent character atlases with four outfits and walking/throwing frames, illustrated scene thumbnails, updated typography and touch icons. Confetti and original music are included. The previous procedural art remains in the source as a fallback. See [art direction and prompts](art/README.md).
 
-Auto fire and Gentle mode are enabled by default. Change them in Settings. Reduce Motion disables shake and film texture animation. Progress and settings save locally; clearing browser site data resets them. Replay unlocked acts from the selection menu.
+The v3 motion pass adds four-pose run cycles for all four outfits, a patrol walk cycle for Sundaram, body-anchored poses, jump stretch, landing squash, breathing, dash trails, throw recoil and hit reactions. Other enemies show a 0.65-second windup before each attack. Auto fire is off by default, including migration from the earlier always-firing controls; Gentle mode is enabled by default. Change them in Settings. Reduce Motion disables shake and film texture animation. Progress and settings save locally; clearing browser site data resets them. Replay unlocked acts from the selection menu.
 
 ## Controls
 
-Touch: hold left/right, tap Jump/Dash/Parry, hold Letter when auto fire is disabled. Multiple fingers work independently. The Tiffin button heals two HP once per act. Speak opens an early conversation when the gold meter is full.
+Touch in school: hold left/right, use Dash, hold Sneak to slow down, and hold Hide within a cart’s cover zone. Keyboard: K hides at carts; S/Down sneaks. Other acts: hold left/right, tap Jump/Dash/Parry, hold Letter to throw. Multiple fingers work independently. The Tiffin button heals two HP once per act. Speak opens an early conversation when the gold meter is full.
 
 Keyboard: A/D or Left/Right to move; Space jump; Shift dash; J/X fire; W/S or Up/Down to aim; K parry; H heal; R speak; Escape/P pause. In conversations type a message freely and press Send. Enter sends; Shift+Enter adds a line in the browser chat.
 
@@ -20,7 +20,7 @@ Keyboard: A/D or Left/Right to move; Space jump; Shift dash; J/X fire; W/S or Up
 
 Conversations use **Qwen3 1.7B on your PC through Ollama**. Type freely in English, Tanglish or Tamil. Sharmila and the other characters generate contextual replies using the current scene and recent messages. Qwen returns a validated reply, emotion, trust change and next attack pattern. There are no preset player-reply buttons and no keyword-based simulated agent. The title screen also has **Chat with Sharmila** for an immediate conversation outside combat.
 
-The browser has a responsive chat overlay with a native textarea, scrolling message history, Send, a thinking indicator, clear offline/timeout messages, and a return button. The textarea stays mounted when the phone keyboard opens. A failed request keeps the unsent draft. Each game conversation can continue for several turns before returning to combat; trust gains are bounded per phase.
+The browser has a responsive chat overlay with a native textarea, scrolling message history, Send, a thinking indicator, clear offline/timeout messages, and a return button. The textarea stays mounted when the phone keyboard opens. Missing pairing skips immediately. An unreachable PC, unavailable model, or failed generation automatically skips the conversation and resumes gameplay. A four-second readiness check bounds connection waiting; Skip remains available during generation. Skipping cancels pending requests, discards stale replies, awards no model trust, and allows the final scene to clear without a trust requirement. Each game conversation can continue for several turns before returning to combat; trust gains are bounded per phase.
 
 The game API is separate from QwenLab and exposes only character chat and model readiness. Ollama remains on loopback. A private bearer code protects the relay; browser origins, input length, conversation roles and model updates are checked. Requests have a time limit and one inference runs at a time. Neither the game API nor browser uploads training data or writes conversation logs. Messages pass through the HTTPS relay to the PC for inference. No voice input is used.
 
@@ -35,7 +35,7 @@ The game API is separate from QwenLab and exposes only character chat and model 
 ```
 
 4. Open `backend/.private/phone-link.html` on the PC. Copy its private game link to your phone. The link pairs that browser automatically; the code is removed from the address bar and retained only for that tab's session.
-5. Tap Play, then **Chat with Sharmila · Qwen**, and type a message. The PC, Ollama and relay must stay on. If the PC is asleep or the relay has stopped, chat reports an error and offers retry.
+5. Tap Play, then **Chat with Sharmila · Qwen**, and type a message. The PC, Ollama and relay must stay on. If the PC is asleep or the relay has stopped, the conversation is skipped and the game remains playable. Reconnect through Settings when the PC is available.
 
 The normal public game URL also works; use **Settings > Connect Qwen on my PC** to enter the HTTPS relay origin and private code manually. Never commit the `.private/` directory or put the code in public documentation. Anyone with your pairing link can use this game connection.
 
@@ -54,6 +54,8 @@ godot --headless --editor --path games/life-quest --quit
 godot --headless --path games/life-quest --script res://tests/gameplay.gd
 python -m unittest discover -s games/life-quest/backend/tests -v
 node --check games/life-quest/web/chat.js
+node --test games/life-quest/tests/chat.test.cjs
+godot --headless --path games/life-quest --script res://tests/art.gd
 ```
 
 Run visual captures with a rendering-capable machine:
@@ -72,7 +74,8 @@ Install the matching Godot 4.7.2 export templates. From this project's folder:
 ```sh
 mkdir -p build/web
 godot --headless --export-release Web build/web/index.html
-# Also copy web/chat.js and web/chat.css into build/web/
+# Also copy web/chat.js, web/chat.css, art/cover-v2.png, and
+# fonts/CinzelDecorative-Bold.ttf into build/web/
 python -m http.server 8000 --directory build/web
 ```
 
