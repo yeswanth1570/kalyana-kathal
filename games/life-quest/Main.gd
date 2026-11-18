@@ -65,6 +65,19 @@ var charm_bar: ProgressBar
 var talk_button: Button
 var heal_button: Button
 var dialogue_input: LineEdit
+var qwen: Node
+var chat_messages: Array[Dictionary] = []
+var agent_histories: Dictionary = {}
+var chat_only := false
+var chat_turns := 0
+var phase_gain := 0
+var chat_error := ""
+var chat_pending := false
+var chat_draft := ""
+var web_callback
+var chat_status: Label
+var chat_send: Button
+var chat_back: Button
 var music: AudioStreamPlayer
 var sfx: AudioStreamPlayer
 var viewport_size := Vector2(1100, 700)
@@ -78,6 +91,13 @@ func _ready() -> void:
 	rng.randomize()
 	_load_progress()
 	_setup_audio()
+	qwen = preload("res://QwenClient.gd").new()
+	add_child(qwen)
+	qwen.replied.connect(_apply_agent_reply)
+	qwen.failed.connect(_agent_failed)
+	if OS.has_feature("web"):
+		web_callback = JavaScriptBridge.create_callback(_web_chat_event)
+		JavaScriptBridge.get_interface("window").kalyanaGameEvent = web_callback
 	ui = CanvasLayer.new()
 	add_child(ui)
 	root = Control.new()
@@ -133,7 +153,7 @@ func _save_progress() -> void:
 		push_warning("Progress could not be saved on this device (%s)." % error)
 
 func floor_y() -> float:
-	return viewport_size.y - (230.0 if portrait else 172.0)
+	return viewport_size.y * 0.72 if portrait else viewport_size.y - 172.0
 
 func boss_position() -> Vector2:
 	return Vector2(viewport_size.x - 150, floor_y())
@@ -155,7 +175,6 @@ func _resize() -> void:
 			"map": _show_map()
 			"intro": _show_intro()
 			"dialogue": _show_dialogue()
-			"feedback": _show_feedback()
 			"clear": _show_clear()
 			"defeat": _show_defeat()
 			"credits": _show_credits()
@@ -271,7 +290,7 @@ func _show_title() -> void:
 	state = "title"
 	_clear_screen()
 	var panel := PanelContainer.new()
-	panel.position = Vector2(54, 70 if not portrait else 130)
+	panel.position = Vector2(54, 46 if not portrait else 130)
 	panel.size = Vector2(viewport_size.x - 108 if portrait else minf(600, viewport_size.x - 108), 0)
 	panel.add_theme_stylebox_override("panel", _style(Color(0.09,0.21,0.20,0.94), Color("bc9b60"), 20))
 	screen.add_child(panel)
@@ -283,15 +302,22 @@ func _show_title() -> void:
 	col.add_theme_constant_override("separation", int(12 * ui_scale))
 	margin.add_child(col)
 	_label(col, "A TAMIL CINEMA ADVENTURE", 18, GOLD)
-	_label(col, "KALYANA\nKATHAL", 62, PAPER)
+	_label(col, "KALYANA\nKATHAL", 62 if portrait else 52, PAPER)
 	_label(col, "T H E   L I F E   Q U E S T", 19, Color("a9c8b8"))
 	_label(col, "Dodge the drama. Find the words.\nFrom a folded note to forever.", 23)
 	var play := _button(col, "Choose your act  >" if unlocked > 0 else "Let the story begin  >", _show_map, true)
+	_button(col,"Chat with Sharmila · Qwen",_meet_sharmila)
 	var row := _row(col)
 	_button(row, "How to play", _show_help)
 	_button(row, "Settings", _open_settings)
 	_label(col, "5 ACTS  /  TOUCH + KEYBOARD  /  SAVED ON DEVICE", 13, Color("b6c6b5"))
 	play.grab_focus()
+
+func _meet_sharmila() -> void:
+	stage = 1
+	_start_stage()
+	chat_only = true
+	_open_dialogue()
 
 func _show_map() -> void:
 	state = "map"
@@ -327,6 +353,7 @@ func _show_intro() -> void:
 	_button(col, "<  All acts", _show_map)
 
 func _start_stage() -> void:
+	chat_only = false
 	state = "playing"
 	phase = 0
 	max_hp = 6 if gentle else 4
@@ -597,64 +624,139 @@ func _open_dialogue() -> void:
 	state = "dialogue"
 	shots.clear()
 	hazards.clear()
+	chat_messages.assign(agent_histories.get(_agent_name(), []))
+	chat_turns = 0
+	phase_gain = 0
+	chat_error = ""
+	chat_draft = ""
+	chat_pending = false
+	chat_messages.append({"role":"assistant","content":Story.ACTS[stage].talks[phase].q})
 	_show_dialogue()
+
+func _agent_name() -> String:
+	return ["Sundaram", "Sharmila", "Karthik", "Amma & Appa", "Sharmila"][stage]
 
 func _show_dialogue() -> void:
 	state = "dialogue"
-	var col := _modal(920)
-	var talk: Dictionary = Story.ACTS[stage].talks[phase]
-	_label(col, "CINEMA FREEZE-FRAME  ·  CONVERSATION %d / 3" % (phase+1), 16, GOLD)
-	_label(col, talk.q, 30)
-	_label(col, "TRUST %d / 72   ·   Choose a reply or write your own." % approval, 19, Color("bad2c0"))
-	for i in range(3):
-		var button := _button(col, "%d   %s" % [i+1,talk.choices[i]], _choose.bind(i))
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.add_theme_font_size_override("font_size", int(21 * ui_scale))
+	if OS.has_feature("web"):
+		_clear_screen()
+		var payload := {"actor":_agent_name(),"stage":stage,"phase":phase,"approval":approval,"messages":chat_messages,"turns":chat_turns,"hint":Story.ACTS[stage].hint,"chat_only":chat_only}
+		JavaScriptBridge.eval("window.kalyanaChat.open(%s)" % JSON.stringify(payload))
+		return
+	var col := _modal(960)
+	_label(col, "LIVE CHARACTER CHAT  /  QWEN ON YOUR PC", 16, GOLD)
+	_label(col, _agent_name()+"  ·  Trust %d / 72" % approval, 30)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.y = 220 * ui_scale
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(scroll)
+	var messages := VBoxContainer.new()
+	messages.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(messages)
+	for message in chat_messages:
+		_label(messages,("YOU: " if message.role=="user" else _agent_name().to_upper()+": ")+message.content,22,Color("c6d9c3") if message.role=="user" else PAPER)
+	chat_status = _label(col,"Qwen is thinking…" if chat_pending else chat_error,18,GOLD)
 	dialogue_input = LineEdit.new()
-	dialogue_input.placeholder_text = "Your words · Tamil / Tanglish / English"
-	dialogue_input.max_length = 240
-	dialogue_input.custom_minimum_size.y = 64 * ui_scale
+	dialogue_input.placeholder_text = "Type your reply · Tamil / Tanglish / English"
+	dialogue_input.max_length = 500
+	dialogue_input.text = chat_draft
+	dialogue_input.custom_minimum_size.y = 68 * ui_scale
+	dialogue_input.text_changed.connect(func(text: String): chat_draft = text)
 	dialogue_input.text_submitted.connect(_submit_text)
 	col.add_child(dialogue_input)
-	_button(col, "Say it  >", _submit_current_text, true)
-	_label(col, "Authored dialogue + local keyword rules. Your words stay on this device.", 15, Color("afc4b2"))
+	var row := _row(col)
+	chat_send = _button(row,"Send to Qwen",_submit_current_text,true)
+	chat_send.disabled = chat_pending
+	_button(row,"Connect PC",_show_agent_connection)
+	chat_back = _button(col,"Back to title  >" if chat_only else "Back to the scene  >",_finish_chat)
+	chat_back.disabled = chat_pending or (chat_turns==0 and not chat_only)
+	_label(col,"Replies are generated by your PC's Qwen model. No preset reply choices.",16,Color("afc4b2"))
+	scroll.set_deferred("scroll_vertical",100000)
 
 func _submit_current_text() -> void:
 	if is_instance_valid(dialogue_input): _submit_text(dialogue_input.text)
 
 func _submit_text(text: String) -> void:
-	if state != "dialogue": return
-	var evaluated := Story.evaluate(text,stage,phase)
-	if evaluated.score == 0:
-		dialogue_input.placeholder_text = evaluated.reply
-		dialogue_input.clear()
+	if state != "dialogue" or chat_pending: return
+	var clean := text.strip_edges()
+	if clean.length()<2:
+		chat_error="Write a message before sending."
+		_show_dialogue()
 		return
-	_resolve_reply(evaluated.score,evaluated.reply)
+	chat_draft = clean
+	chat_error = ""
+	chat_pending = true
+	qwen.send_message(clean,stage,phase,approval,chat_messages)
+	_show_dialogue()
 
-func _choose(index: int) -> void:
-	if state != "dialogue" or index < 0 or index > 2: return
-	var talk: Dictionary = Story.ACTS[stage].talks[phase]
-	_resolve_reply(talk.scores[index],talk.reply[index])
+func _agent_failed(message: String) -> void:
+	chat_pending=false
+	chat_error=message
+	if state=="dialogue": _show_dialogue()
 
-func _resolve_reply(score: int, reply: String) -> void:
-	last_score = score
-	last_question = Story.ACTS[stage].talks[phase].q
-	response = reply
-	approval = clampi(approval+score,0,100)
-	attack_speed = 0.88 if score >= 20 else (1.13 if score < 0 else 1.0)
-	_sound("parry" if score > 0 else "hit")
-	_show_feedback()
+func _apply_agent_reply(data: Dictionary) -> void:
+	if state != "dialogue": return
+	chat_pending=false
+	if not chat_draft.is_empty():
+		chat_messages.append({"role":"user","content":chat_draft})
+	chat_messages.append({"role":"assistant","content":str(data.get("reply",""))})
+	chat_messages = chat_messages.slice(-12)
+	agent_histories[_agent_name()] = chat_messages.duplicate(true)
+	chat_draft=""
+	chat_turns+=1
+	var amount := clampi(int(data.get("approval_delta",0)),-15,30)
+	last_score = mini(amount,maxi(0,36-phase_gain)) if amount>0 else amount
+	phase_gain+=maxi(last_score,0)
+	approval=clampi(approval+last_score,0,100)
+	response=str(data.get("reply",""))
+	var pattern: String=str(data.get("attack_pattern","normal"))
+	attack_speed=0.88 if pattern=="calmer" else (1.13 if pattern=="faster" else 1.0)
+	_sound("parry" if last_score>0 else "hit")
+	if not OS.has_feature("web"): _show_dialogue()
 
-func _show_feedback() -> void:
-	state = "feedback"
-	var col := _modal()
-	_label(col, "THE WORDS THAT CHANGE THE SCENE", 17, GOLD)
-	_label(col, response, 34)
-	_label(col, "%s%d TRUST    ·    TOTAL %d / 72" % ["+" if last_score >= 0 else "", last_score, approval], 25, Color("b9d5bb") if last_score > 0 else Color("eeaaa0"))
-	var note := "The next attack pattern slows down." if last_score >= 20 else "Listen to their concern. You can still turn this around."
-	_label(col, note, 22)
-	_button(col, "Continue  >", _continue_after_reply, true).grab_focus()
+func _finish_chat() -> void:
+	if chat_pending or (chat_turns==0 and not chat_only):return
+	if OS.has_feature("web"):JavaScriptBridge.eval("window.kalyanaChat.hide()")
+	if chat_only:
+		chat_only=false
+		_show_title()
+	else:
+		_continue_after_reply()
+
+func _web_chat_event(args: Array) -> void:
+	if args.is_empty():return
+	var data = JSON.parse_string(str(args[0]))
+	if not data is Dictionary:return
+	match str(data.get("kind","")):
+		"reply":
+			chat_draft=str(data.get("user_text",""))
+			_apply_agent_reply(data)
+		"continue": _finish_chat()
+
+func _show_agent_connection() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.kalyanaChat.connect()")
+		return
+	var col := _modal(900)
+	_label(col,"CONNECT QWEN ON YOUR PC",26,GOLD)
+	_label(col,"Use the HTTPS relay address and access code from Start-Phone-Chat.ps1. Keep them private.",22)
+	var address := LineEdit.new()
+	address.placeholder_text="https://your-relay.trycloudflare.com"
+	address.text=qwen.endpoint
+	address.custom_minimum_size.y=70
+	col.add_child(address)
+	var code := LineEdit.new()
+	code.placeholder_text="Private access code"
+	code.secret=true
+	code.text=qwen.access_code
+	code.custom_minimum_size.y=70
+	col.add_child(code)
+	_button(col,"Connect and return",func():
+		qwen.endpoint=address.text.strip_edges()
+		qwen.access_code=code.text.strip_edges()
+		if state=="dialogue":_show_dialogue()
+		else:_show_settings(),true)
+	_label(col,"The PC must stay on with Ollama and the relay running. The code stays in this session.",18)
 
 func _continue_after_reply() -> void:
 	if phase == 2 and approval >= 72:
@@ -702,7 +804,7 @@ func _show_credits() -> void:
 	_label(col, "SUBHAM  /  THE BEGINNING", 18, GOLD)
 	_label(col, "Love is a team sport.", 43)
 	_label(col, "From the school corridor to the wedding stage,\nMurugan and Sharmila learned to listen.\nNow the real life quest begins.", 27)
-	_label(col, "Original procedural artwork, animation and music.\nInspired by your Kalyana Kathal game design document.\nNo voice recording. No analytics. No remote AI.", 19, Color("b6cbb6"))
+	_label(col, "Original procedural artwork, animation and music.\nInspired by your Kalyana Kathal game design document.\nQwen character chat on your PC. No voice recording or analytics.", 19, Color("b6cbb6"))
 	_button(col, "Watch the reels again  >", _show_map, true)
 	_button(col, "Title screen", _show_title)
 
@@ -748,7 +850,8 @@ func _show_settings() -> void:
 	_toggle(col,"Auto letters · focus on dodging",auto_fire,_set_auto)
 	_toggle(col,"Music and sound effects",sound_on,_set_sound)
 	_toggle(col,"Reduced motion · no shake or film flicker",reduce_motion,_set_motion)
-	_label(col,"Progress and settings save locally in this browser.\nNo account, microphone or server is required.",21)
+	_button(col,"Connect Qwen on my PC",_show_agent_connection)
+	_label(col,"Progress and settings save locally in this browser.\nQwen chat uses your PC. No microphone is used.",21)
 	_button(col,"Done  >",_settings_back,true)
 
 func _toggle(parent: Node, text: String, value: bool, callback: Callable) -> void:
@@ -791,7 +894,7 @@ func _show_help() -> void:
 	_label(col,"THE HERO'S HANDBOOK",18,GOLD)
 	_label(col,"A little action. A lot of heart.",36)
 	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nAuto letters are on by default. Multiple fingers work together.",23)
-	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · 1/2/3 choose a reply",21)
+	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · Type freely to talk to the Qwen character",21)
 	_label(col,"Lower the shield to 70%, 40% and 12% to talk.\nReach 72 trust after three talks to clear the act.\nPink petals can be parried: fill gold for an early conversation.",23)
 	_label(col,"A short dash makes you invincible. A tiffin heals once per act.\nOn a phone, landscape gives you more room to dodge.",21,Color("b9cbb6"))
 	_button(col,"Got it  >",_settings_back,true).grab_focus()
@@ -859,9 +962,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_K: _parry()
 			KEY_H: _heal()
 			KEY_R: _manual_talk()
-	elif state == "dialogue":
-		# Text fields consume keys first so typing numbers never chooses a reply.
-		if event.keycode >= KEY_1 and event.keycode <= KEY_3: _choose(event.keycode - KEY_1)
 
 func _burst(pos: Vector2, color: Color, count: int) -> void:
 	for i in range(count):
@@ -885,7 +985,7 @@ func _draw() -> void:
 	var animate := state == "playing" and absf(velocity.x)>0
 	if state == "playing":
 		animate = _held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT)
-	var actor_scale := 1.5 if portrait else 1.0
+	var actor_scale := 1.8 if portrait else 1.0
 	if state == "title": actor_scale *= 1.6
 	if invincible <= 0 or state != "playing" or int(age*14)%2==0:
 		_character(scene_player,"hero",actor_scale,animate)

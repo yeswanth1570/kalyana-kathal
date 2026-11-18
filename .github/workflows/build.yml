@@ -39,6 +39,11 @@ jobs:
       - name: Import and validate Life Quest
         run: godot --headless --editor --path games/life-quest --quit
 
+      - name: Test Qwen game API and browser chat syntax
+        run: |
+          python3 -m unittest discover -s games/life-quest/backend/tests -v
+          node --check games/life-quest/web/chat.js
+
       - name: Test Life Quest gameplay and all five acts
         run: |
           set -o pipefail
@@ -53,10 +58,15 @@ jobs:
           mkdir -p build/web/life-quest
           godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/index.html
 
+      - name: Copy mobile conversation UI
+        run: cp games/life-quest/web/chat.js games/life-quest/web/chat.css build/web/life-quest/
+
       - name: Verify exported games
         run: |
           test -s build/web/index.html
           test -s build/web/life-quest/index.html
+          test -s build/web/life-quest/chat.js
+          test -s build/web/life-quest/chat.css
           test -s build/web/life-quest/index.pck
           test -s build/web/life-quest/index.wasm
           if grep -q '\$GODOT_' build/web/life-quest/index.html; then exit 1; fi

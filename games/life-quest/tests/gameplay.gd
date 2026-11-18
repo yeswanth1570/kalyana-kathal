@@ -70,18 +70,18 @@ func run() -> void:
 	game.resistance=70
 	game._tick(0.016)
 	check(game.state=="dialogue" and game.hazards.is_empty(),"70 percent opens and freezes conversation")
-	game._choose(0)
-	check(game.approval==50 and game.state=="feedback","First good reply awards trust")
+	game._apply_agent_reply({"reply":"A contextual Qwen reply.","approval_delta":30,"attack_pattern":"calmer"})
+	check(game.approval==50 and game.state=="dialogue","First good reply awards trust")
 	game._continue_after_reply()
 	check(game.phase==1 and game.state=="playing","Conversation resumes at phase two")
 	game.resistance=40
 	game._tick(0.016)
 	check(game.state=="dialogue","40 percent opens second conversation")
-	game._choose(0)
+	game._apply_agent_reply({"reply":"A contextual Qwen reply.","approval_delta":30,"attack_pattern":"calmer"})
 	game._continue_after_reply()
 	game.resistance=12
 	game._tick(0.016)
-	game._choose(0)
+	game._apply_agent_reply({"reply":"A contextual Qwen reply.","approval_delta":30,"attack_pattern":"calmer"})
 	game._continue_after_reply()
 	check(game.state=="clear" and game.unlocked>=1,"Three good conversations clear and unlock next act")
 	check(game.approval==100,"Trust clamps to 100")
@@ -90,7 +90,7 @@ func run() -> void:
 	game.phase=2
 	game.approval=0
 	game.state="dialogue"
-	game._choose(2)
+	game._apply_agent_reply({"reply":"Please respect my concern.","approval_delta":-15,"attack_pattern":"faster"})
 	game._continue_after_reply()
 	check(game.state=="playing" and game.resistance==30,"Poor dialogue can be recovered with another round")
 	game._start_stage()
@@ -126,19 +126,15 @@ func run() -> void:
 		check(Story.ACTS[act].talks.size()==3,"Act %d has three conversations"%(act+1))
 		game.stage=act
 		for p in range(3):
-			var words: String=Story.ACTS[act].talks[p].clues[0]
-			var evaluation := Story.evaluate("I promise "+words,act,p)
-			check(evaluation.score>=20,"Act %d phase %d local custom reply"%[act+1,p+1])
+			check(not Story.ACTS[act].talks[p].q.is_empty(),"Act %d phase %d has grounded scene context"%[act+1,p+1])
 		game._start_stage()
 		for p in range(3):
 			game.resistance=game.THRESHOLDS[p]
 			game._tick(.016)
-			game._choose(0)
+			game._apply_agent_reply({"reply":"A contextual Qwen reply.","approval_delta":30,"attack_pattern":"calmer"})
 			game._continue_after_reply()
 		check(game.state=="clear","Act %d is completable"%(act+1))
 	check(game.completed,"Final act saves completion")
-	check(Story.evaluate("you owe me respect",1,0).score<0,"Negative intent overrides positive keywords")
-	check(Story.evaluate("hi",0,0).score==0,"Empty or short custom replies are rejected")
 	# Advance real projectile movement and collision at 60 FPS through a full act.
 	game.stage=0
 	game.auto_fire=true
@@ -149,11 +145,22 @@ func run() -> void:
 		if game.state=="playing":
 			game.invincible=1 # Isolate projectile and phase timing.
 			game._tick(1.0/60.0)
-		elif game.state=="dialogue": game._choose(0)
-		elif game.state=="feedback": game._continue_after_reply()
+		elif game.state=="dialogue":
+			game._apply_agent_reply({"reply":"A contextual Qwen reply.","approval_delta":30,"attack_pattern":"calmer"})
+			game._continue_after_reply()
 		else: break
 	check(game.state=="clear","Real 60 FPS projectile simulation clears all three shield phases")
 	check(simulation_frames>500 and simulation_frames<2500,"Combat finishes within intended timing")
+	game._meet_sharmila()
+	check(game.chat_only and game.state=="dialogue" and game.stage==1,"Title screen can open direct typed Sharmila chat")
+	game.chat_draft="I remember your theatre idea."
+	game._apply_agent_reply({"reply":"You remembered!","approval_delta":999,"attack_pattern":"calmer"})
+	game.chat_draft="Let us plan the fest together."
+	game._apply_agent_reply({"reply":"That sounds good.","approval_delta":999,"attack_pattern":"calmer"})
+	check(game.phase_gain==36,"Repeated model replies have bounded phase trust gains")
+	check(game.agent_histories.has("Sharmila"),"Agent remembers recent typed messages in this session")
+	game._finish_chat()
+	check(game.state=="title","Direct chat returns to title without changing story progression")
 	if had_save:
 		var file := FileAccess.open(save_path,FileAccess.WRITE)
 		file.store_buffer(saved_bytes)

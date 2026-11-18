@@ -7,3 +7,7 @@ feature_profiles/
 script_templates/
 text_editor_themes/
 *.tmp
+
+backend/.private/
+backend/tools/
+__pycache__/
