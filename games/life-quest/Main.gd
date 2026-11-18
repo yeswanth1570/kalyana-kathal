@@ -1315,7 +1315,9 @@ func _draw_stealth_scene() -> void:
 	var gate := Vector2(viewport_size.x-60,floor_y())
 	draw_style_box(_style(Color("224c42"),GOLD,14),Rect2(gate+Vector2(-38,-175),Vector2(76,170)))
 	_text("EXIT",gate+Vector2(0,-133),19,PAPER,true)
-	_text("→",gate+Vector2(0,-88),40,GOLD,true)
+	var arrow := gate + Vector2(0,-99)
+	draw_line(arrow+Vector2(-17,0), arrow+Vector2(17,0), GOLD, 4, true)
+	draw_polyline(PackedVector2Array([arrow+Vector2(4,-12), arrow+Vector2(17,0), arrow+Vector2(4,12)]), GOLD, 4, true)
 	if hidden_in_cover: _text("HIDDEN",player+Vector2(0,-185),20,GOLD,true)
 
 func _draw_cover_props() -> void:
