@@ -26,9 +26,16 @@ func cancel() -> void:
 	health.cancel_request()
 	busy = false
 
+func _valid_address(address: String) -> bool:
+	return address.begins_with("https://") or address.begins_with("http://127.0.0.1:") or address.begins_with("http://localhost:")
+
 func check_connection() -> void:
 	health.cancel_request()
-	var error := health.request(endpoint.trim_suffix("/")+"/api/health",PackedStringArray(["Authorization: Bearer "+access_code]))
+	var address := endpoint.strip_edges().trim_suffix("/")
+	if not _valid_address(address):
+		failed.emit("Use your PC’s HTTPS relay address.")
+		return
+	var error := health.request(address+"/api/health",PackedStringArray(["Authorization: Bearer "+access_code]))
 	if error != OK: failed.emit("Qwen is unavailable")
 
 func send_message(text: String, stage: int, phase: int, approval: int, history: Array) -> void:
@@ -38,7 +45,7 @@ func send_message(text: String, stage: int, phase: int, approval: int, history: 
 		failed.emit("Connect Qwen on your PC first. Open Settings > Connect Qwen.")
 		return
 	var address := endpoint.strip_edges().trim_suffix("/")
-	if not address.begins_with("https://") and not address.begins_with("http://127.0.0.1:") and not address.begins_with("http://localhost:"):
+	if not _valid_address(address):
 		failed.emit("Use your PC's HTTPS relay address, or localhost for a desktop test.")
 		return
 	busy = true

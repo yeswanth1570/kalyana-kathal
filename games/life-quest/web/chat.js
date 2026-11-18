@@ -42,7 +42,7 @@ async function checkAvailability(){
 function openConnection(){ $('qwen-url').value=endpoint;$('qwen-key').value=key;$('qwen-status').textContent='';connection.hidden=false }
 window.kalyanaChat={
  open(data){if(current&&current.id===data.id&&!section.hidden)return;abort?.abort();generation++;current=structuredClone(data);turns=data.turns||0;phaseGain=0;busy=false;$('chat-name').textContent=data.actor;$('chat-avatar').textContent=data.actor[0];$('chat-avatar').classList.toggle('sharmila',data.actor==='Sharmila');$('chat-reel').textContent=`ACT ${String(data.stage+1).padStart(2,'0')} / 05  ·  CONVERSATION ${data.phase+1} / 3`;$('chat-hint').textContent=data.hint;$('chat-messages').replaceChildren();for(const message of data.messages)bubble(message.role==='user'?'user':'assistant',message.content);$('chat-return').textContent=data.chat_only?'Back to title →':'Back to the scene →';$('chat-input').value='';$('chat-status').textContent=endpoint&&key?'Your words. Their response. Take your time.':'Connect your PC to talk to the Qwen character.';trust();controls();section.hidden=false;document.getElementById('fullscreen').hidden=true;checkAvailability();},
- hide(){generation++;abort?.abort();busy=false;section.hidden=true;connection.hidden=true;current=null;document.getElementById('fullscreen').hidden=false;document.getElementById('canvas').focus()},
+ hide(){generation++;abort?.abort();busy=false;$('chat-status').classList.remove('thinking');section.hidden=true;connection.hidden=true;current=null;document.getElementById('fullscreen').hidden=false;document.getElementById('canvas').focus()},
  connect:openConnection
 };
 $('chat-skip').addEventListener('click',()=>skip());

@@ -89,6 +89,7 @@ var dialogue_input: LineEdit
 var qwen: Node
 var chat_messages: Array[Dictionary] = []
 var agent_histories: Dictionary = {}
+var title_chat_notice := ""
 var chat_only := false
 var chat_turns := 0
 var phase_gain := 0
@@ -249,6 +250,8 @@ func _style(bg: Color, border: Color, radius: int) -> StyleBoxFlat:
 	return box
 
 func _clear_screen() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.get_interface("document").body.dataset.scene = state
 	_clear_input()
 	if is_instance_valid(screen):
 		root.remove_child(screen)
@@ -342,6 +345,7 @@ func _show_title() -> void:
 	_label(col, "Dodge the drama. Find the words.\nFrom a folded note to forever.", 23)
 	var play := _button(col, "Choose your act  >" if unlocked > 0 else "Let the story begin  >", _show_map, true)
 	_button(col,"Chat with Sharmila · Qwen",_meet_sharmila)
+	if not title_chat_notice.is_empty(): _label(col, title_chat_notice, 16, GOLD)
 	var row := _row(col)
 	_button(row, "How to play", _show_help)
 	_button(row, "Settings", _open_settings)
@@ -394,6 +398,7 @@ func _show_intro() -> void:
 	_button(col, "<  All acts", _show_map)
 
 func _start_stage() -> void:
+	title_chat_notice = ""
 	qwen.cancel()
 	chat_only = false
 	state = "playing"
@@ -659,8 +664,9 @@ func _tick_stealth(dt: float) -> void:
 	var distance := player.x-master_x
 	var visible := not hidden_in_cover and ((distance*master_facing > 0 and absf(distance) < 300) or absf(distance)<52)
 	if caught_timer <= 0:
-		awareness = clampf(awareness + (62.0 if visible else -38.0)*dt, 0, 100)
-	if awareness >= 100:
+		var detection_rate := 22.0 if _sneaking() and dash_time <= 0 else 62.0
+		awareness = clampf(awareness + (detection_rate if visible else -38.0)*dt, 0, 100)
+	if awareness >= 100 and invincible <= 0:
 		_take_hit()
 		if state != "playing": return
 		player = Vector2(80, floor_y())
@@ -722,7 +728,7 @@ func _hazard(pos: Vector2, motion: Vector2, kind: String, pink: bool=false, grav
 	hazards.append({"p":pos,"v":motion,"kind":kind,"pink":pink,"gravity":gravity,"life":life})
 
 func _jump() -> void:
-	if state == "playing" and player.y >= floor_y()-1:
+	if stage != 0 and state == "playing" and player.y >= floor_y()-1:
 		velocity.y = -555
 		_burst(player, Color("d5c8a8"), 6)
 
@@ -734,12 +740,12 @@ func _dash() -> void:
 		_sound("letter")
 
 func _parry() -> void:
-	if state == "playing" and parry_cooldown <= 0:
+	if stage != 0 and state == "playing" and parry_cooldown <= 0:
 		parry_time = 0.24
 		parry_cooldown = 0.5
 
 func _heal() -> void:
-	if state == "playing" and not used_tiffin and hp < max_hp:
+	if stage != 0 and state == "playing" and not used_tiffin and hp < max_hp:
 		hp = mini(max_hp, hp+2)
 		used_tiffin = true
 		_burst(player+Vector2(0,-70), TEAL, 20)
@@ -865,13 +871,14 @@ func _apply_agent_reply(data: Dictionary) -> void:
 	_sound("parry" if last_score>0 else "hit")
 	if not OS.has_feature("web"): _show_dialogue()
 
-func _skip_dialogue(_reason: String = "Conversation skipped") -> void:
+func _skip_dialogue(reason: String = "Conversation skipped") -> void:
 	if state != "dialogue": return
 	qwen.cancel()
 	chat_pending = false
 	if OS.has_feature("web"): JavaScriptBridge.eval("window.kalyanaChat.hide()")
 	if chat_only:
 		chat_only = false
+		if reason != "Conversation skipped": title_chat_notice = "Qwen is offline. Pair your PC in Settings or choose an act to play."
 		_show_title()
 		return
 	offline_run = true
@@ -880,7 +887,8 @@ func _skip_dialogue(_reason: String = "Conversation skipped") -> void:
 	_continue_after_reply()
 
 func _finish_chat() -> void:
-	if chat_pending or (chat_turns==0 and not chat_only):return
+	if state != "dialogue" or chat_pending or (chat_turns==0 and not chat_only):return
+	qwen.cancel()
 	if OS.has_feature("web"):JavaScriptBridge.eval("window.kalyanaChat.hide()")
 	if chat_only:
 		chat_only=false
@@ -1111,6 +1119,8 @@ func _control_at(point: Vector2) -> String:
 
 func _action(action: String) -> void:
 	match action:
+		"fire":
+			if shot_clock <= 0: _fire()
 		"jump": _jump()
 		"dash": _dash()
 		"parry": _parry()
@@ -1128,6 +1138,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if state == "playing":
 		match event.keycode:
 			KEY_SPACE: _jump()
+			KEY_J, KEY_X: _action("fire")
 			KEY_SHIFT: _dash()
 			KEY_K: _parry()
 			KEY_H: _heal()
@@ -1154,8 +1165,7 @@ func _draw() -> void:
 	if state != "title":
 		var animate := state == "playing" and (_held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT))
 		var actor_scale := 1.55 if portrait else 1.0
-		if invincible <= 0 or state != "playing" or int(age*14)%2==0:
-			_character(player,"hero",actor_scale,animate)
+		_character(player,"hero",actor_scale,animate)
 		var kind: String = ["teacher","senior","manager","father","aunty"][stage]
 		_character(boss_position(),kind,actor_scale,stage == 0 and state == "playing" and master_turn <= 0)
 		if stage == 3: _character(boss_position()+Vector2(87,0),"aunty",actor_scale*0.85,false)
@@ -1277,6 +1287,8 @@ func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) 
 	_oval(Vector2(pos.x,floor_y()+5),Vector2(30*scale_factor*shadow_scale,7*scale_factor),Color(0.015,0.06,0.045,0.25*shadow_scale))
 	draw_set_transform(pos+Vector2(0,bob),tilt,Vector2(-motion.x if flip else motion.x,motion.y))
 	var tint := Color(1.5,1.4,1.1,1) if boss_flash>0 and kind!="hero" else Color.WHITE
+	if kind == "hero" and state == "playing" and invincible > 0:
+		tint = Color(0.85,1.0,0.95,0.86)
 	if kind == "hero" and hidden_in_cover and stage == 0: tint.a = 0.55
 	# Crop the envelope painted into the throw pose; the live projectile animates it.
 	var visible_width := 0.78 if kind == "hero" and not using_run and column == 3 else 1.0

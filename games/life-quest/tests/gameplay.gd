@@ -232,6 +232,33 @@ func run() -> void:
 	check(game.hp==before_caught-1 and game.player.x==80 and game.caught_timer>0,"Capture costs one heart and resets to safety")
 	for i in range(20):game._tick(.016)
 	check(game.hp==before_caught-1,"Capture cannot cause repeated immediate damage")
+	game._start_stage()
+	game._parry()
+	game._jump()
+	check(game.parry_time==0 and game.velocity.y==0,"School keyboard actions match the stealth touch controls")
+	game.master_facing=1
+	game.player.x=game.master_x+100
+	game._tick(.1)
+	var running_gain: float=game.awareness
+	game.awareness=0
+	game.held["sneak"]=true
+	game._tick(.1)
+	check(game.awareness>0 and game.awareness<running_gain,"Sneaking slows detection inside the patrol view")
+	game.stage=1
+	game.auto_fire=false
+	game._start_stage()
+	var tap := InputEventScreenTouch.new()
+	tap.index=2
+	tap.position=game.control_rects.fire.get_center()
+	tap.pressed=true
+	game._input(tap)
+	tap.pressed=false
+	game._input(tap)
+	game._tick(.016)
+	check(game.shots.size()==1,"A touch press and release between frames throws one letter")
+	game._action("fire")
+	check(game.shots.size()==1,"Rapid taps respect throw cooldown")
+	game.stage=0
 	# Traverse the real patrol: hide at the middle cart, let him pass, then exit.
 	game._start_stage()
 	var hiding := false
