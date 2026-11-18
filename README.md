@@ -1,5 +1,9 @@
 # Kalyana Kathal: The Life Quest
 
+**New five-act mobile game:** [Play the Life Quest](https://yeswanth1570.github.io/kalyana-kathal/life-quest/) · [Source and controls](games/life-quest/README.md)
+
+The new game lives in `games/life-quest/` and includes School, College, Office, Family and Wedding encounters, touch controls, settings, local progress and original art/audio. The original college prototype below remains available at the site root URL.
+
 A Godot 4.7.2 prototype for a 2D college-corridor action and dialogue game.
 
 ## Play in Godot

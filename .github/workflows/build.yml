@@ -19,6 +19,9 @@ concurrency:
 jobs:
   export:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -33,8 +36,31 @@ jobs:
       - name: Validate project scripts
         run: godot --headless --editor --path . --quit
 
+      - name: Import and validate Life Quest
+        run: godot --headless --editor --path games/life-quest --quit
+
+      - name: Test Life Quest gameplay and all five acts
+        run: |
+          set -o pipefail
+          godot --headless --path games/life-quest --script res://tests/gameplay.gd 2>&1 | tee life-quest-tests.log
+          if grep -E 'SCRIPT ERROR:|^ERROR:' life-quest-tests.log; then exit 1; fi
+
       - name: Export browser build
         run: mkdir -p build/web && godot --headless --path . --export-release "Web" build/web/index.html
+
+      - name: Export Life Quest mobile browser game
+        run: |
+          mkdir -p build/web/life-quest
+          godot --headless --path games/life-quest --export-release "Web" ../../build/web/life-quest/index.html
+
+      - name: Verify exported games
+        run: |
+          test -s build/web/index.html
+          test -s build/web/life-quest/index.html
+          test -s build/web/life-quest/index.pck
+          test -s build/web/life-quest/index.wasm
+          if grep -q '\$GODOT_' build/web/life-quest/index.html; then exit 1; fi
+          touch build/web/.nojekyll
 
       - name: Export Windows build
         run: mkdir -p build/windows && godot --headless --path . --export-release "Windows Desktop" build/windows/KalyanaKathal.exe

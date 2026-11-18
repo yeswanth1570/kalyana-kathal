@@ -1,0 +1,32 @@
+config_version=5
+
+[application]
+config/name="Kalyana Kathal · The Life Quest"
+config/description="Five acts. One love story. A Tamil cinema action comedy."
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/use_custom_user_dir=true
+config/custom_user_dir_name="KalyanaKathalLifeQuest"
+config/icon="res://icon.svg"
+
+[display]
+window/size/viewport_width=1100
+window/size/viewport_height=700
+window/size/window_width_override=1100
+window/size/window_height_override=700
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=6
+
+[input_devices]
+pointing/emulate_mouse_from_touch=true
+pointing/emulate_touch_from_mouse=false
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.08,0.14,0.14,1)
+textures/default_filters/use_nearest_mipmap_filter=false
+
+[audio]
+general/default_playback_type=0
