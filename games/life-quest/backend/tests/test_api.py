@@ -34,7 +34,7 @@ class API(unittest.TestCase):
                 'text': 'I rushed. I will go after class and ask if she wants the note.'}
         with patch.object(server, 'request_model', return_value={
             'reply': 'After class, and let her decide.',
-            'emotion': 'skeptical', 'addressed': ['ownership', 'repair', 'choice'],
+            'emotion': 'skeptical', 'marks': {'ownership': True, 'repair': True, 'choice': True},
         }) as ask:
             status, data, headers = self.request(path='/api/school', body=body)
         self.assertEqual(status, 200)
@@ -45,7 +45,7 @@ class API(unittest.TestCase):
     def test_school_rejects_unknown_model_marks_and_no_pilot_endpoint(self):
         body = {'school': {'level': 0, 'outcome': 'success', 'reason': 'reached'}, 'text': 'I was returning a page.'}
         with patch.object(server, 'request_model', return_value={
-            'reply': 'Go.', 'emotion': 'warm', 'addressed': ['force_pass'],
+            'reply': 'Go.', 'emotion': 'warm', 'marks': {'force_pass': True},
         }):
             self.assertEqual(self.request(path='/api/school', body=body)[0], 502)
         self.assertEqual(self.request(path='/pilot/submit', body=body)[0], 404)

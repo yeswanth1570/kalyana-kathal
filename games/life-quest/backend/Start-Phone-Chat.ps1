@@ -16,7 +16,7 @@ function Test-CharacterAPI([string]$base) {
 if ($Preview -and (Test-CharacterAPI 'http://127.0.0.1:8787')) {
     $header = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($accessFile).Trim() }
     $currentApi = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -Headers $header -TimeoutSec 6
-    if (-not $currentApi.school_debrief) {
+    if ($currentApi.school_protocol -ne 2) {
         $ownedPidFile = Join-Path $privateDir 'server.pid'
         if (-not (Test-Path -LiteralPath $ownedPidFile)) { throw 'Update the running character API before opening the school preview.' }
         $ownedId = [int]([IO.File]::ReadAllText($ownedPidFile).Trim())
