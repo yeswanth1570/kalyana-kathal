@@ -1804,6 +1804,8 @@ func _draw() -> void:
 			_character(boss_position()+world_offset+Vector2(94,0),"sharmila",actor_scale*0.85,false)
 	draw_set_transform(world_offset)
 	if stage == 0 and school.level != School.Level.WALK_HOME and state in ["playing","paused","school_result"]:
+		if school.level == School.Level.CLASSROOM:
+			_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[3],_sharmila_desk(),_school_actor_height(true)*0.69)
 		_draw_cover_props()
 		if school.note_time > 0.0:
 			var t := 1.0-school.note_time/0.46
@@ -2177,18 +2179,16 @@ func _draw_classroom() -> void:
 		for i in range(4):
 			var t := fposmod(elapsed*2.4+i*0.24,1.0)
 			draw_circle(chalk+Vector2(t*18.0,t*36.0),2.0,Color(1,0.98,0.81,(1.0-t)*0.67))
-	var first := _sharmila_desk()
-	_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[3],first,_school_actor_height(true)*0.69)
 	if state == "playing":
 		var badge := teacher-Vector2(0,_school_actor_height(false)*0.92+30)
 		var cue: String = ["WRITING","TURNING","WATCHING","TURNING"][gaze]
 		var trim := GOLD if gaze == School.Gaze.WRITING else ROSE
 		draw_style_box(_style(INK,trim,10),Rect2(badge-Vector2(82,18),Vector2(164,36)))
 		_text(cue,badge+Vector2(0,6),18,PAPER,true)
-		if _can_offer_note(): _envelope(first-Vector2(0,_school_actor_height(true)*0.76),GOLD,0.75)
+		if _can_offer_note(): _envelope(_sharmila_desk()-Vector2(0,_school_actor_height(true)*0.76),GOLD,0.75)
 
 func _sharmila_desk() -> Vector2:
-	return Vector2(_note_position()+(94.0 if portrait else 75.0),floor_y()-15.0)
+	return Vector2(_note_position()+(120.0 if portrait else 96.0),floor_y()-15.0)
 
 func _draw_walk_home() -> void:
 	var w := _stage_width()
