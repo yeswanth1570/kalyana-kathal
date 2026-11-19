@@ -1,6 +1,8 @@
 # The Folded Note preview
 
-In Before the Bell, slip past Sundaram’s patrol. In The Last Bench, wait behind the desks until Ms. Revathi writes, then cross the aisle and use Offer Note or E at Sharmila’s bench. Hold S or Down on a keyboard. On touch, tap Duck to toggle and slide between Left and Right to change direction. In The Walk Home, wait for bicycles and meet Sharmila at the public bus stop.
+In Before the Bell, tap a cover ring to sneak there and crouch. Use Dash to slide, vault a bench, or get to the next cover faster. Sprinting across water or chalk draws extra attention. Tap the brass bell rope to pull Sundaram away. On desktop, A/D moves, W targets the next cover, S crouches, and Shift dashes. A full awareness meter costs one HP and returns Murugan to his last open doorway.
+
+In The Last Bench, time your movement while Ms. Revathi writes, then use Offer Note or E at Sharmila’s bench. Tap Duck on touch or hold S on keyboard. In The Walk Home, time the bicycle crossings and meet Sharmila at the bus stop.
 
 Getting caught opens a parent–teacher meeting. Explaining the mistake and how to put it right earns a longer opening on a supervised retry. The mobile preview is published at /life-quest-preview/. The stable /life-quest/ path serves v5.
 

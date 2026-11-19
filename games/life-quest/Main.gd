@@ -11,6 +11,8 @@ const REACTION_FACES: Texture2D = preload("res://art/characters/reaction-faces-v
 const SCHOOL_OPENING: Texture2D = preload("res://art/story/school-opening-v6.png")
 const SchoolArt = preload("res://SchoolArt.gd")
 const SchoolMotion = preload("res://SchoolMotion.gd")
+const Veranda = preload("res://Veranda.gd")
+const VerandaArt = preload("res://VerandaArt.gd")
 const CAST_SHEET: Texture2D = preload("res://art/characters/cast_sheet-v2.png")
 const SCENERY: Array[Texture2D] = [preload("res://art/stages/school-v2.png"),preload("res://art/stages/college-v2.png"),preload("res://art/stages/office-v2.png"),preload("res://art/stages/family-v2.png"),preload("res://art/stages/wedding-v2.png")]
 const INK := Color("203936")
@@ -27,6 +29,7 @@ const ACTIVITIES := {
 }
 
 var school := School.new()
+var veranda := Veranda.new()
 var progress_path := SAVE
 var school_resolution := ""
 var school_action_button: Button
@@ -39,12 +42,7 @@ var school_step_phase := 0.0
 var school_moving := false
 var school_mood: int = SchoolMotion.Mood.FOCUSED
 var school_relief := 0.0
-var school_whistle := 0.0
 var master_stride := 0.0
-var school_bell_pulse := 0.0
-var school_last_bell := false
-var school_breeze := 0.0
-var school_breeze_triggered := false
 var school_has_spoken := false
 var state := "title"
 var previous_state := "title"
@@ -239,14 +237,15 @@ func _save_progress() -> void:
 		push_warning("Progress could not be saved on this device (%s)." % error)
 
 func floor_y() -> float:
+	if portrait and _is_veranda(): return viewport_size.y*0.80
 	return viewport_size.y * (0.715 if stage == 0 else 0.72) if portrait else viewport_size.y - 172.0
 
 func boss_position() -> Vector2:
-	return Vector2(master_x if stage == 0 else viewport_size.x - 150, floor_y())
+	return Vector2(master_x if stage == 0 else viewport_size.x - 150,floor_y()-(35.0 if _is_veranda() else 0.0))
 
 func _stage_width() -> float:
 	if stage != 0: return viewport_size.x
-	if school.level == School.Level.CORRIDOR: return viewport_size.x+168.0
+	if school.level == School.Level.CORRIDOR: return maxf(2050.0,viewport_size.x+860.0)
 	var art := SchoolScenes.background(school.level).get_size()
 	return maxf(viewport_size.x+440.0,(floor_y()-200.0)*art.x/(art.y*0.80))
 
@@ -260,13 +259,15 @@ func _follow_camera(dt: float) -> void:
 func _resize() -> void:
 	var old_floor := floor_y()
 	var scene_position := player.x/maxf(1.0,_stage_width())
+	var patrol_position := master_x/maxf(1.0,_stage_width())
 	viewport_size = get_viewport_rect().size
 	portrait = viewport_size.y > viewport_size.x
 	ui_scale = 2.0 if portrait else 1.0
-	if stage == 0 and school.level != School.Level.CORRIDOR:
+	if stage == 0:
 		player.x = scene_position*_stage_width()
 	player.x = clampf(player.x, 48, _stage_width() - (55 if stage == 0 else 295))
 	master_x = clampf(master_x, viewport_size.x * 0.40, _stage_width() - 220)
+	if _is_veranda(): master_x = _stage_width()*clampf(patrol_position,0.26,0.90)
 	camera_x = clampf(player.x - viewport_size.x * 0.44,0.0,_stage_width()-viewport_size.x) if stage == 0 else 0.0
 	player.y = floor_y() + minf(player.y - old_floor, 0)
 	shots.clear()
@@ -546,12 +547,7 @@ func _start_stage() -> void:
 		school_moving = false
 		school_mood = SchoolMotion.Mood.FOCUSED
 		school_relief = 0.0
-		school_whistle = 0.0
 		master_stride = 0.0
-		school_bell_pulse = 0.85
-		school_last_bell = false
-		school_breeze = 0.0
-		school_breeze_triggered = false
 		school_has_spoken = false
 		chat_messages.clear()
 		chat_error = ""
@@ -563,6 +559,13 @@ func _start_stage() -> void:
 	approval = 20
 	charm = 0
 	player = Vector2(112 if stage == 0 else 160, floor_y())
+	if _is_veranda():
+		veranda = Veranda.new()
+		max_hp = 3
+		hp = max_hp
+		player = _veranda_base(0)
+		school_ducking = true
+		school_duck_blend = 1.0
 	if stage == 0 and school.level == School.Level.CLASSROOM:
 		player.x = _stage_width()*float(School.BENCHES[0])
 	velocity = Vector2.ZERO
@@ -580,6 +583,7 @@ func _start_stage() -> void:
 	shake = 0.0
 	windup = 0
 	master_x = viewport_size.x * 0.57
+	if _is_veranda(): master_x = _stage_width()*0.43
 	master_facing = 1
 	master_turn = 0
 	awareness = 0
@@ -684,6 +688,10 @@ func _make_hud() -> void:
 
 func _school_control_layout(y: float, height: float) -> void:
 	var width := viewport_size.x
+	if _is_veranda():
+		var dash_width := 132.0*ui_scale
+		control_rects = {"dash":Rect2(width-dash_width-24.0,y,dash_width,height)}
+		return
 	var move_width := clampf(width*0.38, 280.0, 450.0)
 	var gap := 10.0
 	var left_button := (move_width-gap)/2.0
@@ -691,7 +699,7 @@ func _school_control_layout(y: float, height: float) -> void:
 		"left":Rect2(22,y,left_button,height),
 		"right":Rect2(22+left_button+gap,y,left_button,height),
 	}
-	var actions: Array = ["dash","sneak"] if school.level == School.Level.CORRIDOR else ["sneak"]
+	var actions: Array = ["sneak"]
 	if school.level == School.Level.WALK_HOME: return
 	var group_width := minf(width-44.0-move_width-40.0, 560.0)
 	var button_width := (group_width-gap*(actions.size()-1))/float(actions.size())
@@ -757,6 +765,10 @@ func _update_hud() -> void:
 			if school.note_time > 0.0: status_label.text = "Sharmila takes the note"
 		elif street:
 			status_label.text = "Meet Sharmila at the bus stop"
+		if _is_veranda():
+			hp_label.text = "%d / %d HP  ·  %ds" % [hp,max_hp,time_left]
+			progress_label.text = "CARRY THE NOTE TO THE GATE"
+			status_label.text = ""
 		if notice_time > 0: status_label.text = notice
 		return
 	progress_label.text = "ACT %02d / 05   %s   ·   TRUST %d/72   ·   TALK %d/3" % [stage+1, Story.ACTS[stage].place, approval, mini(phase+1,3)]
@@ -796,6 +808,11 @@ func _tick(dt: float) -> void:
 	var axis := 0.0
 	if _held("left") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): axis -= 1
 	if _held("right") or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): axis += 1
+	if _is_veranda():
+		_tick_veranda(dt,axis)
+		_follow_camera(dt)
+		_update_hud()
+		return
 	if stage != 0 and axis != 0 and dash_time <= 0: facing = axis
 	school_ducking = stage == 0 and school.level != School.Level.WALK_HOME and dash_time <= 0 and _sneaking()
 	if stage == 0 and (school.stumble > 0.0 or school.note_time > 0.0): axis = 0.0
@@ -829,7 +846,6 @@ func _tick(dt: float) -> void:
 		if school_moving and dash_time <= 0.0:
 			school_step_phase = SchoolMotion.advance_step(school_step_phase,distance,school_ducking)
 		match school.level:
-			School.Level.CORRIDOR: _tick_stealth(dt)
 			School.Level.CLASSROOM: _tick_classroom(dt)
 			School.Level.WALK_HOME: _tick_walk_home(dt,old_x)
 		_follow_camera(dt)
@@ -901,7 +917,7 @@ func _cover_positions() -> Array[float]:
 		for bench in School.BENCHES:
 			desks.append(w*bench)
 		return desks
-	return [w*0.251,w*0.492,w*0.735]
+	return []
 
 func _school_cover_radius(index: int) -> float:
 	if school.level == School.Level.CLASSROOM:
@@ -960,42 +976,257 @@ func _tick_classroom(dt: float) -> void:
 	elif elapsed >= School.TIMES[School.Level.CLASSROOM]:
 		_end_school("failure","bell")
 
-func _tick_stealth(dt: float) -> void:
-	school_whistle = maxf(0.0,school_whistle-dt)
-	school_bell_pulse = maxf(0.0,school_bell_pulse-dt)
-	school_breeze = maxf(0.0,school_breeze-dt)
-	if not school_breeze_triggered and player.x >= _cover_positions()[0]:
-		school_breeze_triggered = true
-		school_breeze = 3.4
-	if not school_last_bell and elapsed >= School.TIMES[School.Level.CORRIDOR]-7.0:
-		school_last_bell = true
-		school_bell_pulse = 1.5
-		_sound("bell")
+func _is_veranda() -> bool:
+	return stage == 0 and school.level == School.Level.CORRIDOR
 
-	var entered_cover := _update_cover()
+func _veranda_base(node: int) -> Vector2:
+	return Vector2(Veranda.x_at(node,_stage_width()),floor_y()+float(Veranda.DEPTH[node]))
+
+func _veranda_choose(node: int) -> bool:
+	if veranda.watch == Veranda.Watch.CAUGHT or not Veranda.reachable(node,player.x,_stage_width()):
+		return false
+	if veranda.resting == node and veranda.target < 0: return true
+	veranda.target = node
+	veranda.resting = -1
+	veranda.origin = player
+	return true
+
+func _veranda_next() -> bool:
+	if veranda.target >= 0: return true
+	var step := 1 if facing >= 0 else -1
+	for i in range(Veranda.PATH.size()):
+		var node := i if step == 1 else Veranda.END-i
+		if (_veranda_base(node).x-player.x)*step > 55.0:
+			return _veranda_choose(node)
+	return false
+
+func _veranda_tap(point: Vector2) -> bool:
+	var rope := _veranda_rope()
+	if Rect2(rope-Vector2(42,13),Vector2(84,174)).has_point(point):
+		_veranda_ring_bell()
+		return true
+	var world_point := point+Vector2(camera_x,0)
+	var best := -1
+	var best_distance := INF
+	for node in Veranda.PATH.size():
+		if not Veranda.reachable(node,player.x,_stage_width()): continue
+		var base := _veranda_base(node)
+		var size := _veranda_size(node)
+		var hit := Rect2(base-Vector2(size.x*0.5,size.y),size).grow(25.0)
+		if hit.has_point(world_point) and absf(base.x-world_point.x) < best_distance:
+			best_distance = absf(base.x-world_point.x)
+			best = node
+	return best >= 0 and _veranda_choose(best)
+
+func _veranda_sprint() -> void:
+	if veranda.watch == Veranda.Watch.CAUGHT or veranda.sprint: return
+	if veranda.target < 0 and not _veranda_next() and not _held("left") and not _held("right"): return
+	veranda.sprint = true
+	veranda.ripple = Veranda.RIPPLE
+	veranda.splash = false
+	veranda.noise = player
+	if not reduce_motion: _burst(player,Color("b1845a"),5)
+	_sound("letter")
+	if absf(master_x-player.x) <= Veranda.HEARING:
+		_veranda_investigate(player.x,24.0)
+
+func _veranda_ring_bell() -> void:
+	if veranda.bell_cooldown > 0.0 or veranda.watch == Veranda.Watch.CAUGHT: return
+	veranda.bell_time = 2.65
+	veranda.bell_cooldown = 8.0
+	var rope_x := _veranda_rope().x+camera_x
+	veranda.bell_goal = clampf(minf(rope_x,master_x-135.0),_stage_width()*0.26,_stage_width()*0.90)
+	_veranda_investigate(veranda.bell_goal,12.0)
+	veranda.grace = Veranda.GRACE
+	_sound("bell")
+
+func _veranda_investigate(at_x: float, minimum: float) -> void:
+	if veranda.watch == Veranda.Watch.PATROL:
+		veranda.watch = Veranda.Watch.SUSPICIOUS
+		veranda.grace = Veranda.GRACE
+		master_turn = 0.0
+		if absf(at_x-master_x)>1.0: _veranda_begin_turn(signf(at_x-master_x))
+	awareness = maxf(awareness,minimum)
+
+func _veranda_begin_turn(direction: float) -> void:
+	if direction == master_facing or veranda.turn_left > 0.0: return
+	veranda.turn_from = master_facing
+	veranda.turn_to = direction
+	veranda.turn_left = Veranda.TURN_DURATION
+
+func _veranda_patrol(dt: float) -> void:
+	if veranda.watch != Veranda.Watch.PATROL: return
 	if master_turn > 0.0:
 		master_turn = maxf(0.0,master_turn-dt)
-		if master_turn <= 0.60: master_facing = school.turn_face
+		if master_turn <= Veranda.TURN_DURATION+0.02: _veranda_begin_turn(school.turn_face)
+		return
+	if veranda.turn_left > 0.0: return
+	var w := _stage_width()
+	var previous := master_x
+	master_x = clampf(master_x+master_facing*133.0*dt,w*0.26,w*0.90)
+	if master_x <= w*0.26 or master_x >= w*0.90:
+		school.turn_face = -master_facing
+		master_turn = 2.9 if school.supervised else 0.90
+		veranda.patrol_window = false
+	elif not veranda.patrol_window and (previous-w*0.60)*(master_x-w*0.60) <= 0.0:
+		veranda.patrol_window = true
+		school.turn_face = master_facing
+		master_turn = 0.7
+	master_stride += absf(master_x-previous)
+
+func _veranda_move(dt: float, axis: float) -> void:
+	var old_x := player.x
+	var sprinting_on_entry := veranda.sprint
+	if axis != 0.0:
+		veranda.target = -1
+		veranda.resting = -1
+		facing = axis
+		if Input.is_physical_key_pressed(KEY_SHIFT) and not veranda.sprint: _veranda_sprint()
+		var pace := 490.0 if veranda.sprint and (Input.is_physical_key_pressed(KEY_SHIFT) or _held("dash")) else (150.0 if _sneaking() else 248.0)
+		if pace < 490.0: veranda.sprint = false
+		player.x = clampf(player.x+axis*pace*dt,_veranda_base(0).x,_veranda_base(Veranda.END).x)
+	elif veranda.target >= 0:
+		var destination := _veranda_base(veranda.target)
+		if absf(destination.x-player.x) > 1.0: facing = signf(destination.x-player.x)
+		player.x = move_toward(player.x,destination.x,(490.0 if veranda.sprint else 168.0)*dt)
+		if is_equal_approx(player.x,destination.x):
+			veranda.resting = veranda.target
+			veranda.target = -1
+			veranda.sprint = false
+			veranda.settle = 0.18
 	else:
-		var bounds_left := _stage_width()*0.40
-		var bounds_right := _stage_width()-190.0
-		var previous_master_x := master_x
-		master_x = clampf(master_x+master_facing*78.0*dt,bounds_left,bounds_right)
-		if master_x >= bounds_right or master_x <= bounds_left:
-			school.turn_face = -master_facing
-			master_turn = 3.2 if school.supervised else 1.2
-			school_whistle = 0.55
-			if absf(player.x-master_x) < viewport_size.x: _sound("whistle")
-		master_stride += absf(master_x-previous_master_x)
+		veranda.sprint = false
+	var node := veranda.resting
+	if _sneaking() and node < 0:
+		for i in range(Veranda.END):
+			if absf(player.x-_veranda_base(i).x)<=39.0:
+				node = i
+				break
+	var y := floor_y()
+	if node >= 0: y = _veranda_base(node).y
+	elif veranda.target >= 0:
+		var destination := _veranda_base(veranda.target)
+		var total := maxf(1.0,absf(destination.x-veranda.origin.x))
+		var progress := 1.0-clampf(absf(destination.x-player.x)/total,0.0,1.0)
+		var bow := -19.0 if Veranda.is_hard(veranda.target) else 18.0
+		y = lerpf(veranda.origin.y,destination.y,smoothstep(0.0,1.0,progress))+sin(progress*PI)*bow
+	if not veranda.sprint:
+		for patch in Veranda.PATCHES:
+			var gap := absf(player.x-_stage_width()*float(patch))
+			y += 28.0*(1.0-smoothstep(0.0,78.0,gap))
+	player.y = move_toward(player.y,y,260.0*dt)
+	school_ducking = not veranda.sprint and (node >= 0 or veranda.target >= 0 or _sneaking())
+	school_duck_blend = move_toward(school_duck_blend,float(school_ducking),dt*(14.0 if reduce_motion else 8.2))
+	var distance := absf(player.x-old_x)
+	school_moving = distance>10.0*dt
+	if school_moving:
+		school_step_phase = SchoolMotion.advance_step(school_step_phase,distance,school_ducking)
+	if (veranda.sprint or sprinting_on_entry) and school_moving:
+		_veranda_rustle(old_x)
+		_veranda_floor_noise(old_x)
+	else:
+		veranda.patch_used = -1
+	veranda.vault_lift = 0.0
+	if veranda.sprint:
+		for bench in [2,5]:
+			var gap := absf(player.x-_veranda_base(bench).x)
+			if gap < 86.0 and veranda.target != bench:
+				veranda.vault_lift = sin((1.0-gap/86.0)*PI*0.5)*_school_actor_height(true)*0.31
+	var guard_distance := absf(master_x-player.x)
+	var was_hidden := hidden_in_cover
+	hidden_in_cover = Veranda.concealment(node,school_ducking,guard_distance) and absf(player.y-y)<14.0
+	if hidden_in_cover and Veranda.is_hard(node): veranda.checkpoint = node
+	if not was_hidden and hidden_in_cover: _update_school_mood(0.0,awareness,true)
+
+func _veranda_rustle(old_x: float) -> void:
+	if reduce_motion: return
+	for i in range(Veranda.END):
+		if Veranda.TYPES[i]!=0: continue
+		var base := _veranda_base(i)
+		if (old_x-base.x)*(player.x-base.x)<=0.0:
+			veranda.rustle = base
+			veranda.rustle_time = 0.46
+			_burst(base+Vector2(0,-8),Color("b87b4e"),9)
+
+func _veranda_floor_noise(old_x: float) -> void:
+	for i in Veranda.PATCHES.size():
+		var center := _stage_width()*float(Veranda.PATCHES[i])
+		if veranda.patch_used == i or maxf(old_x,player.x)<center-40.0 or minf(old_x,player.x)>center+40.0: continue
+		veranda.patch_used = i
+		veranda.noise = Vector2(center,floor_y()+3)
+		veranda.ripple = Veranda.RIPPLE
+		veranda.splash = true
+		if absf(master_x-center)<Veranda.HEARING*1.6:
+			_veranda_investigate(center,minf(96.0,awareness+27.0))
+		if not reduce_motion:
+			_burst(veranda.noise,Color("a8c5bc") if i==0 else Color("dcc495"),12)
+		_sound("parry")
+
+func _tick_veranda(dt: float, axis: float) -> void:
+	veranda.ripple = maxf(0.0,veranda.ripple-dt)
+	veranda.rustle_time = maxf(0.0,veranda.rustle_time-dt)
+	veranda.settle = maxf(0.0,veranda.settle-dt)
+	veranda.bell_time = maxf(0.0,veranda.bell_time-dt)
+	veranda.bell_cooldown = maxf(0.0,veranda.bell_cooldown-dt)
+	if veranda.turn_left > 0.0:
+		veranda.turn_left = maxf(0.0,veranda.turn_left-dt)
+		if veranda.turn_left <= Veranda.TURN_DURATION*0.44:
+			master_facing = veranda.turn_to
+	if veranda.watch == Veranda.Watch.CAUGHT:
+		veranda.recovery = maxf(0.0,veranda.recovery-dt)
+		if veranda.recovery == 0.0:
+			if hp <= 0: _end_school("failure","caught")
+			else: veranda.watch = Veranda.Watch.PATROL
+		return
+	if veranda.bell_time > 0.0:
+		if veranda.bell_goal < master_x: _veranda_begin_turn(-1.0)
+		if veranda.turn_left <= 0.0:
+			var previous := master_x
+			master_x = move_toward(master_x,veranda.bell_goal,185.0*dt)
+			master_stride += absf(master_x-previous)
+	else:
+		_veranda_patrol(dt)
+	_veranda_move(dt,axis)
 	var distance := player.x-master_x
-	var seen := master_turn <= 1.2 and not hidden_in_cover and (absf(distance)<48.0 or (distance*master_facing>0.0 and absf(distance)<250.0))
-	_update_school_awareness(dt,seen,22.0 if school_ducking else 62.0,entered_cover)
+	var seen := not hidden_in_cover and (absf(distance)<=Veranda.CLOSE or (distance*master_facing>=0.0 and absf(distance)<=Veranda.SIGHT))
+	if veranda.watch == Veranda.Watch.PATROL and seen:
+		_veranda_investigate(player.x,18.0)
+	if veranda.watch == Veranda.Watch.SUSPICIOUS and veranda.grace > 0.0:
+		veranda.grace = maxf(0.0,veranda.grace-dt)
+		if not seen: _update_school_awareness(dt,false,0.0,false)
+	elif veranda.watch == Veranda.Watch.SUSPICIOUS:
+		_update_school_awareness(dt,seen,105.0 if veranda.sprint else 86.0,false)
+		if awareness <= 0.0: veranda.watch = Veranda.Watch.PATROL
 	if awareness >= 100.0:
-		_end_school("failure","caught")
-	elif player.x >= _stage_width()-76 and awareness < 70.0:
+		_veranda_caught()
+	elif player.x >= _veranda_base(Veranda.END).x-10.0:
 		_end_school("success","reached")
 	elif elapsed >= School.TIMES[School.Level.CORRIDOR]:
 		_end_school("failure","bell")
+
+func _veranda_caught() -> void:
+	hp = maxi(0,hp-1)
+	veranda.watch = Veranda.Watch.CAUGHT
+	veranda.recovery = Veranda.RECOVERY
+	veranda.target = -1
+	veranda.resting = veranda.checkpoint
+	veranda.sprint = false
+	veranda.ripple = 0.0
+	veranda.bell_time = 0.0
+	veranda.vault_lift = 0.0
+	veranda.turn_left = 0.0
+	awareness = 0.0
+	player = _veranda_base(veranda.checkpoint)
+	school_ducking = true
+	school_duck_blend = 1.0
+	school_moving = false
+	hidden_in_cover = true
+	master_turn = 0.65
+	school.turn_face = -master_facing
+	flashes = 0.44
+	_impact(player+Vector2(0,-105),"−1 HP")
+	_clear_input()
+	_sound("hit")
 
 func _update_school_awareness(dt: float, seen: bool, rate: float, entered_cover: bool) -> void:
 	var previous := awareness
@@ -1246,6 +1477,9 @@ func _jump() -> void:
 		_burst(player, Color("d5c8a8"), 6)
 
 func _dash() -> void:
+	if state == "playing" and _is_veranda():
+		_veranda_sprint()
+		return
 	if state == "playing" and dash_cooldown <= 0 and (stage != 0 or school.level == School.Level.CORRIDOR):
 		dash_time = 0.17 if stage==0 else 0.22
 		dash_cooldown = 0.55 if stage == 1 and activity_claimed else 1.0
@@ -1630,7 +1864,7 @@ func _show_help() -> void:
 	_label(col,"A little action. A lot of heart.",36)
 	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nHold LETTER to throw; auto letters are optional in Settings. Multiple fingers work together.",23)
 	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · Type freely to talk to the Qwen character",21)
-	_label(col,"SCHOOL: tap DUCK to switch stance, or hold S on a keyboard. Crouch behind furniture to hide. Use Offer Note or E at the front bench.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
+	_label(col,"VERANDA: tap cover and use DASH. A/D move, W targets cover, S crouches, Shift dashes.\nCLASSROOM: tap DUCK or hold S to hide at a desk. Use Offer Note or E at the front bench.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
 	_label(col,"A short dash makes you invincible. A tiffin heals once per act.\nOn a phone, landscape gives you more room to dodge.",21,Color("b9cbb6"))
 	_button(col,"Got it  >",_settings_back,true).grab_focus()
 
@@ -1674,7 +1908,8 @@ func _input(event: InputEvent) -> void:
 			var action := _control_at(event.position)
 			pointer_actions[-1] = action
 			_action(action)
-			if action != "": get_viewport().set_input_as_handled()
+			if action != "" or (_is_veranda() and _veranda_tap(event.position)):
+				get_viewport().set_input_as_handled()
 
 func _school_touch(event: InputEvent) -> void:
 	var id: int = event.index
@@ -1684,7 +1919,9 @@ func _school_touch(event: InputEvent) -> void:
 			pointer_actions.erase(id)
 			return
 		var action := _control_at(event.position)
-		if action.is_empty(): return
+		if action.is_empty():
+			if _is_veranda() and _veranda_tap(event.position): get_viewport().set_input_as_handled()
+			return
 		pointer_actions[id] = action
 		if action in ["left","right"]:
 			school_move_touches[id] = true
@@ -1729,6 +1966,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if state == "playing":
 		match event.keycode:
+			KEY_W:
+				if _is_veranda(): _veranda_next()
 			KEY_SPACE: _jump()
 			KEY_J, KEY_X: _action("fire")
 			KEY_SHIFT: _dash()
@@ -1809,9 +2048,10 @@ func _draw() -> void:
 		if stage == 1 or stage == 4:
 			_character(boss_position()+world_offset+Vector2(94,0),"sharmila",actor_scale*0.85,false)
 	draw_set_transform(world_offset)
-	if stage == 0 and school.level != School.Level.WALK_HOME and state in ["playing","paused","school_result"]:
-		if school.level == School.Level.CLASSROOM:
-			_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[3],_sharmila_desk(),_school_actor_height(true)*0.69)
+	if _is_veranda() and state in ["playing","paused","school_result"]:
+		_draw_veranda_cover(false)
+	if stage == 0 and school.level == School.Level.CLASSROOM and state in ["playing","paused","school_result"]:
+		_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[3],_sharmila_desk(),_school_actor_height(true)*0.69)
 		_draw_cover_props()
 		if school.note_time > 0.0:
 			var t := 1.0-school.note_time/0.46
@@ -1831,20 +2071,20 @@ func _draw() -> void:
 	for particle in particles:
 		var color: Color = particle.color
 		color.a = minf(1,particle.life*2)
-		draw_rect(Rect2(particle.p,Vector2(5,5)),color)
+		if _is_veranda(): draw_circle(particle.p,2.5+particle.life*9.0,color,true,-1.0,true)
+		else: draw_rect(Rect2(particle.p,Vector2(5,5)),color)
 	draw_set_transform(Vector2.ZERO)
+	if _is_veranda() and state in ["playing","paused","school_result"]:
+		_draw_veranda_foreground()
+		_draw_veranda_grade()
 	if state == "playing":
 		if impact_time > 0: _draw_impact(world_offset)
-		if stage == 0 and school.level == School.Level.CORRIDOR:
+		if _is_veranda() and veranda.watch != Veranda.Watch.PATROL:
 			var cue := boss_position()+world_offset+Vector2(0,-_school_actor_height(false)-27)
-			var word := ""
-			if awareness>=52: word = "!"
-			elif master_turn>1.2: word = "WAITING"
-			elif master_turn>0: word = "TURNING"
-			if not word.is_empty():
-				var badge_size := Vector2(45,38) if word=="!" else Vector2(139,38)
-				draw_style_box(_style(INK,ROSE if word=="!" else GOLD,10),Rect2(cue-badge_size*0.5,badge_size))
-				_text(word,cue+Vector2(0,6),18,PAPER,true)
+			if not reduce_motion: cue.y += sin(elapsed*13.0)*7.0
+			var caught := veranda.watch == Veranda.Watch.CAUGHT
+			draw_circle(cue,20.0*ui_scale,Color("503226") if caught else INK,true,-1.0,true)
+			_text("!" if caught else "?",cue+Vector2(0,7.0*ui_scale),int(27*ui_scale),ROSE if caught else GOLD,true)
 		elif face_time > 0:
 			_draw_reaction(player+world_offset,face_frame,-facing,ROSE if face_frame!=2 else GOLD)
 	# Film perforations and subtle texture make the world feel like a printed reel.
@@ -1857,6 +2097,12 @@ func _draw() -> void:
 			draw_line(Vector2(x,y),Vector2(x+2,y+3),Color(0.2,0.18,0.12,0.07),1)
 	draw_set_transform(Vector2.ZERO)
 	if state == "playing":
+		if _is_veranda():
+			var dash_pad: Rect2 = control_rects["dash"]
+			draw_rect(Rect2(0,dash_pad.position.y-12,viewport_size.x,viewport_size.y-dash_pad.position.y+12),Color("1d3932"))
+			if elapsed < 3.0:
+				var hint_color := Color(PAPER,clampf((3.0-elapsed)/0.6,0.0,1.0))
+				_text("Tap cover to sneak · Hold DASH to sprint",Vector2(dash_pad.position.x*0.5,dash_pad.get_center().y+6.0),int(17*ui_scale),hint_color,true)
 		_draw_controls()
 		if flashes > 0: draw_rect(Rect2(Vector2.ZERO,viewport_size),Color(0.8,0.15,0.18,flashes*0.3))
 
@@ -1872,7 +2118,10 @@ func _background() -> void:
 		# The painting provides the scene; a gentle ink glaze gives menu text contrast.
 		draw_rect(Rect2(0,0,w,h),Color(0.015,0.065,0.055,0.12))
 		return
-	var new_school_scene := stage == 0 and school.level != School.Level.CORRIDOR
+	if _is_veranda():
+		_draw_veranda_wall()
+		return
+	var new_school_scene := stage == 0
 	var texture: Texture2D = SchoolScenes.background(school.level) if new_school_scene else SCENERY[stage]
 	var size := texture.get_size()
 	var g := floor_y()
@@ -1892,8 +2141,6 @@ func _background() -> void:
 		point = Vector2(-camera_x,g-image_size.y*0.80)
 	draw_rect(Rect2(0,0,w,h),Color("283f34"))
 	draw_texture_rect(texture,Rect2(point,image_size),false)
-	if stage==0 and school.level == School.Level.CORRIDOR and state=="playing" and not reduce_motion:
-		_draw_school_atmosphere(point,image_size)
 	# Atmospheric pools of light and an inked stage apron separate controls from art.
 	draw_rect(Rect2(0,h-(190 if portrait else 120),w,200),Color(0.035,0.10,0.085,0.70))
 	if not reduce_motion:
@@ -1901,56 +2148,6 @@ func _background() -> void:
 			var px := fmod(float(i*179)+age*9,w)
 			var py := fmod(float(i*97)+sin(age*.4+i)*12,g)
 			draw_circle(Vector2(px,py),1.5,Color(1,0.85,0.5,0.16))
-func _draw_school_atmosphere(origin: Vector2, painted: Vector2) -> void:
-	var girl_progress := SchoolMotion.student_progress(1,elapsed)
-	var boy_progress := SchoolMotion.student_progress(0,elapsed)
-	var girl_feet := SchoolMotion.student_feet(1,minf(girl_progress,1.0))
-	var boy_feet := SchoolMotion.student_feet(0,minf(boy_progress,1.0))
-	if girl_feet.y < boy_feet.y:
-		_draw_school_student(1,girl_progress,girl_feet,origin,painted)
-		_draw_school_student(0,boy_progress,boy_feet,origin,painted)
-	else:
-		_draw_school_student(0,boy_progress,boy_feet,origin,painted)
-		_draw_school_student(1,girl_progress,girl_feet,origin,painted)
-	var bell := origin + painted*Vector2(0.398,0.158)
-	if school_bell_pulse>0.0:
-		var wave := fposmod(1.5-school_bell_pulse,0.48)/0.48
-		for side in [-1,1]:
-			var center := bell+Vector2(side*22.0,0)
-			var angle := PI if side<0 else 0.0
-			draw_arc(center,19.0+wave*29.0,angle-0.63,angle+0.63,16,Color(1,0.88,0.55,(1-wave)*0.65),3.0,true)
-	for i in range(8):
-		var phase_leaf := fposmod(age*(0.17+i*0.012)+i*0.32,1.0)
-		var at := Vector2(fposmod(i*211.0+phase_leaf*290.0-camera_x*0.37,viewport_size.x+90.0)-45.0,
-				floor_y()-460.0+phase_leaf*320.0+sin(age*1.8+i)*21.0)
-		var tone := Color(0.82,0.75,0.34,0.43) if i%3!=0 else Color(0.83,0.37,0.34,0.49)
-		var twist := Vector2(cos(age*2.1+i),sin(age*2.1+i))*7.0
-		draw_colored_polygon(PackedVector2Array([at-twist,at+twist.orthogonal()*0.39,at+twist,at-twist.orthogonal()*0.32]),tone)
-	if school_breeze>0.0:
-		var elapsed_breeze := 3.4-school_breeze
-		for i in range(3):
-			var t := clampf((elapsed_breeze-i*0.28)/2.8,0.0,1.0)
-			if t<=0.0 or t>=1.0: continue
-			var at := Vector2(_stage_width()*0.25-camera_x+72.0+t*240.0,floor_y()-155.0-sin(t*PI)*145.0-i*16.0)
-			var direction := Vector2.from_angle(t*5.4+i)*13.0
-			var edge := direction.orthogonal()*0.60
-			draw_colored_polygon(PackedVector2Array([at-direction-edge,at+direction-edge,at+direction+edge,at-direction+edge]),Color(0.98,0.88,0.66,sin(t*PI)*0.72))
-
-func _draw_school_student(index: int, progress: float, feet: Vector2, origin: Vector2, painted: Vector2) -> void:
-	if progress >= 1.0: return
-	var center := origin+painted*feet
-	if center.x < -110.0 or center.x > viewport_size.x+110.0: return
-	var alpha := smoothstep(0.025,0.145,progress)*(1.0-smoothstep(0.86,0.975,progress))
-	var frame := index*6+int(progress*(7.0 if index==0 else 6.0)*6.0)%6
-	var region: Rect2 = SchoolArt.STUDENTS_FRAMES[frame]
-	var student_height := _school_actor_height(true)*SchoolMotion.student_scale(feet)
-	var size := region.size*(student_height/region.size.y)
-	_oval(center+Vector2(0,2),Vector2(student_height*0.16,student_height*0.028),Color(0.14,0.08,0.04,0.24*alpha))
-	draw_set_transform(center,0.0,Vector2(1.0 if index==0 else -1.0,1.0))
-	var anchor: float = SchoolArt.STUDENT_ANCHORS[frame]
-	draw_texture_rect_region(SchoolArt.STUDENTS,Rect2(Vector2(-size.x*anchor,-size.y),size),region,Color(0.93,0.89,0.83,alpha))
-	draw_set_transform(Vector2.ZERO)
-
 func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
 	if stage == 0 and kind in ["hero","teacher"]:
 		_draw_school_actor(pos,kind=="hero")
@@ -2032,13 +2229,15 @@ func _draw_school_actor(pos: Vector2, hero: bool) -> void:
 		_draw_school_hero(pos)
 		return
 	var is_action := state in ["playing","paused"]
+	if is_action and _is_veranda() and _draw_veranda_guard_tell(pos): return
 	var height := _school_actor_height(false)
 	var facing_visual := master_facing
 	var squash := Vector2.ONE
 	var turning := is_action and master_turn>0
 	var turn_progress := 1.0-minf(master_turn,1.2)/1.2
 	var speaking := state in ["school_result","dialogue","school_ending"]
-	var frame := SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),false,turning,turn_progress,awareness>=65,int(master_stride/11.5))
+	var listening := _is_veranda() and veranda.watch == Veranda.Watch.SUSPICIOUS
+	var frame := SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),listening,turning,turn_progress,awareness>=65,int(master_stride/11.5))
 	if turning:
 		facing_visual = -school.turn_face if turn_progress < 0.5 else school.turn_face
 		if not reduce_motion: squash.x = 1.0-0.10*sin(clampf(turn_progress,0.0,1.0)*PI)
@@ -2054,6 +2253,49 @@ func _draw_school_actor(pos: Vector2, hero: bool) -> void:
 	draw_set_transform(pos,0.0,Vector2(squash.x*facing_visual,squash.y))
 	draw_texture_rect_region(SchoolArt.MASTER,dst,source)
 	draw_set_transform(Vector2.ZERO)
+
+func _draw_veranda_guard_tell(pos: Vector2) -> bool:
+	if veranda.turn_left > 0.0:
+		var frame := Veranda.turn_pose(veranda.turn_left,reduce_motion)
+		var source := VerandaArt.TURN_FRAMES[frame]
+		var height := _school_actor_height(false)
+		var size := source.size*(height/VerandaArt.TURN_REFERENCE_HEIGHT)
+		var phase := 1.0-veranda.turn_left/Veranda.TURN_DURATION
+		var pivot := sin(phase*PI)*4.0 if not reduce_motion else 0.0
+		_oval(pos,Vector2(height*0.21,8.0),Color(0.19,0.09,0.045,0.40))
+		draw_set_transform(pos,0,Vector2(veranda.turn_from,1.0))
+		draw_texture_rect_region(VerandaArt.TURN,Rect2(Vector2(-size.x*0.5+pivot,-size.y),size),source)
+		draw_set_transform(Vector2.ZERO)
+		return true
+	var pose := -1
+	var direction := master_facing
+	var circling := veranda.bell_time>0.0 and absf(master_x-veranda.bell_goal)>8.0
+	if veranda.watch == Veranda.Watch.SUSPICIOUS and not circling:
+		pose = 0
+	elif veranda.watch == Veranda.Watch.CAUGHT:
+		pose = 3
+	elif master_turn > 0.0:
+		if school.turn_face == master_facing or master_turn > 1.0:
+			pose = 1
+		else:
+			pose = 3 if master_turn>0.26 and master_turn<0.62 else 2
+			if master_turn<=0.26: direction = school.turn_face
+	if pose < 0: return false
+
+	var height := _school_actor_height(false)*float([0.92,0.94,0.99,0.96][pose])
+	var source := VerandaArt.GUARD_FRAMES[pose]
+	var size := source.size*(height/source.size.y)
+	_oval(pos+Vector2(0,2),Vector2(height*0.21,8.0),Color(0.19,0.09,0.045,0.40))
+	var twitch := 0.0
+	if pose == 2 and not reduce_motion: twitch = sin(elapsed*26.0)*0.035*direction
+	draw_set_transform(pos,twitch,Vector2(direction,1.0))
+	draw_texture_rect_region(VerandaArt.GUARD,Rect2(Vector2(-size.x*0.47,-size.y),size),source)
+	draw_set_transform(Vector2.ZERO)
+	if pose == 0:
+		for i in range(3):
+			var tip := pos+Vector2(direction*(size.x*0.42+i*5.0),-height*0.78+(i-1)*9.0)
+			draw_line(tip,tip+Vector2(direction*14.0,(i-1)*4.0),Color(0.94,0.77,0.45,0.77),2.2,true)
+	return true
 
 func _draw_school_hero(pos: Vector2) -> void:
 	var active := state in ["playing","paused"]
@@ -2082,6 +2324,17 @@ func _draw_school_hero(pos: Vector2) -> void:
 		anchor = SchoolArt.RUN_ANCHORS[2]
 		reference_height = 420.0
 		if not reduce_motion: lift = sin(school.stumble/0.62*PI)*19.0
+	elif active and _is_veranda() and veranda.sprint:
+		if veranda.vault_lift > 0.0:
+			texture = SchoolArt.RUN
+			source = SchoolArt.RUN_FRAMES[3]
+			anchor = SchoolArt.RUN_ANCHORS[3]
+			reference_height = 420.0
+			lift = veranda.vault_lift
+		else:
+			source = SchoolArt.HERO_FRAMES[4]
+			anchor = 0.52
+			reference_height = source.size.y/0.58
 	elif transition >= 0:
 		texture = SchoolArt.REACTIONS
 		source = SchoolArt.TRANSITION_FRAMES[transition]
@@ -2112,23 +2365,32 @@ func _draw_school_hero(pos: Vector2) -> void:
 	var dest := Vector2(-size.x*anchor,-size.y-lift)
 	_oval(pos+Vector2(0,2),Vector2(base_height*0.19,9.0 if portrait else 6.0),Color(0.15,0.08,0.05,0.34))
 	var tilt := sin(school.stumble/0.62*PI)*-0.30*school.stumble_face if active and school.stumble > 0.0 and not reduce_motion else 0.0
-	draw_set_transform(pos,tilt,Vector2(facing,1.0))
+	var hard := _is_veranda() and hidden_in_cover and Veranda.is_hard(veranda.checkpoint) and absf(player.x-_veranda_base(veranda.checkpoint).x)<44.0
+	var tint := Color("8d8f74") if hard else Color.WHITE
+	var squash := 0.0
+	if _is_veranda() and not reduce_motion:
+		if veranda.sprint and veranda.vault_lift == 0.0:
+			squash = 0.13
+			tilt = facing*0.12
+		elif transition >= 0: squash = sin(school_duck_blend*PI)*0.10
+		squash = maxf(squash,sin(veranda.settle/0.18*PI)*0.11)
+	draw_set_transform(pos,tilt,Vector2(facing*(1.0+squash),1.0-squash))
 	if head == Vector3.ZERO:
-		draw_texture_rect_region(texture,Rect2(dest,size),source)
+		draw_texture_rect_region(texture,Rect2(dest,size),source,tint)
 	else:
-		_draw_school_crouch_face(texture,source,dest,ratio,head)
+		_draw_school_crouch_face(texture,source,dest,ratio,head,tint)
 	draw_set_transform(Vector2.ZERO)
 
-func _draw_school_crouch_face(texture: Texture2D, source: Rect2, dest: Vector2, ratio: float, head: Vector3) -> void:
+func _draw_school_crouch_face(texture: Texture2D, source: Rect2, dest: Vector2, ratio: float, head: Vector3, tint: Color) -> void:
 	# Keep the backpack beside the head and the shoulders below the neck.
 	# The new head overlaps the collar in each registered pose.
 	var body := Rect2(source.position+Vector2(0,head.y),Vector2(source.size.x,source.size.y-head.y))
 	var bag := Rect2(source.position,Vector2(head.x,head.y))
-	draw_texture_rect_region(texture,Rect2(dest+Vector2(0,head.y*ratio),body.size*ratio),body)
-	draw_texture_rect_region(texture,Rect2(dest,bag.size*ratio),bag)
+	draw_texture_rect_region(texture,Rect2(dest+Vector2(0,head.y*ratio),body.size*ratio),body,tint)
+	draw_texture_rect_region(texture,Rect2(dest,bag.size*ratio),bag,tint)
 	var face := SchoolArt.HEAD_FRAMES[school_mood]
 	var face_size := face.size*(head.z*ratio/face.size.x)
-	draw_texture_rect_region(SchoolArt.REACTIONS,Rect2(dest+Vector2(head.x*ratio,0),face_size),face)
+	draw_texture_rect_region(SchoolArt.REACTIONS,Rect2(dest+Vector2(head.x*ratio,0),face_size),face,tint)
 
 func _draw_activity() -> void:
 	var base := _activity_position()
@@ -2154,20 +2416,179 @@ func _draw_activity() -> void:
 	_text(ACTIVITIES[stage].name,sign_center+Vector2(0,27),15,PAPER,true)
 
 func _draw_stealth_scene() -> void:
-	var eye := boss_position()+Vector2(0,-_school_actor_height(false)*0.78)
-	var view := 250.0
-	var color := Color(0.99,0.86,0.48,0.16) if awareness < 60 else Color(0.95,0.24,0.24,0.29)
-	var sight_edge := Vector2(eye.x+master_facing*view,floor_y()+1.0)
-	if master_turn <= 1.2:
-		draw_colored_polygon(PackedVector2Array([eye,eye+Vector2(master_facing*view,-58),sight_edge]),color)
-		draw_line(eye,sight_edge,Color(0.96,0.79,0.40,0.55),2.5,true)
-	var gate := Vector2(_stage_width()-60,floor_y())
-	draw_style_box(_style(Color("224c42"),GOLD,14),Rect2(gate+Vector2(-38,-175),Vector2(76,170)))
-	_text("CLASS",gate+Vector2(0,-133),19,PAPER,true)
-	var arrow := gate + Vector2(0,-99)
-	draw_line(arrow+Vector2(-17,0), arrow+Vector2(17,0), GOLD, 4, true)
-	draw_polyline(PackedVector2Array([arrow+Vector2(4,-12), arrow+Vector2(17,0), arrow+Vector2(4,12)]), GOLD, 4, true)
-	if hidden_in_cover: _text("HIDDEN",player+Vector2(0,-185),20,GOLD,true)
+	_draw_veranda_cover(true)
+	for i in Veranda.PATCHES.size():
+		var feet := Vector2(_stage_width()*float(Veranda.PATCHES[i]),floor_y()+7)
+		_oval(feet,Vector2(59,11),Color("647c75") if i==0 else Color("b9a582"))
+		_oval(feet+Vector2(13,-2),Vector2(32,4),Color(1,0.89,0.66,0.40))
+		if i == 1:
+			for fleck in range(6):
+				draw_circle(feet+Vector2(-46+fleck*16,cos(fleck*5.0)*7.0),2.0,Color("e6d6b5"))
+	if veranda.ripple > 0.0:
+		var fraction := 1.0-veranda.ripple/Veranda.RIPPLE
+		var radius := Veranda.HEARING*(1.35 if veranda.splash else 1.0)
+		var hue := Color("e1ede0") if veranda.splash else GOLD
+		_veranda_ring(veranda.noise,lerpf(24.0,radius,fraction),Color(hue,(1.0-fraction)*0.65),2.0)
+		if veranda.splash: _veranda_ring(veranda.noise,radius*fraction*0.74,Color(hue,(1.0-fraction)*0.42),2.0)
+
+func _veranda_size(node: int) -> Vector2:
+	var h := _school_actor_height(true)
+	if node == Veranda.END: return Vector2(0.43,0.62)*h
+	var kind: int = Veranda.TYPES[node]
+	var region := VerandaArt.COVER_FRAMES[kind]
+	var height := h*float([0.67,0.59,1.34][kind])
+	return region.size*(height/region.size.y)
+
+func _veranda_ring(feet: Vector2, radius: float, color: Color, thickness: float) -> void:
+	var points := PackedVector2Array()
+	for i in range(33):
+		var direction := Vector2.from_angle(TAU*i/32.0)
+		points.append(feet+direction*Vector2(radius,radius*0.21))
+	draw_polyline(points,color,thickness,true)
+
+func _draw_veranda_cover(doors: bool) -> void:
+	for node in Veranda.PATH.size():
+		var hard := Veranda.is_hard(node)
+		if hard != doors: continue
+		var base := _veranda_base(node)
+		var size := _veranda_size(node)
+		if node == Veranda.END:
+			draw_style_box(_style(Color("254b3c"),GOLD,10),Rect2(base-Vector2(size.x*0.5,size.y),size))
+			_text("GATE",base-Vector2(0,size.y*0.63),int(17*ui_scale),PAPER,true)
+			_text("→",base-Vector2(0,size.y*0.30),int(25*ui_scale),GOLD,true)
+		else:
+			var kind: int = Veranda.TYPES[node]
+			var sprite := Rect2(base-Vector2(size.x*0.5,size.y),size)
+			if kind == 0 and base.is_equal_approx(veranda.rustle):
+				sprite.position.x += sin(veranda.rustle_time*53.0)*veranda.rustle_time*12.0
+			_oval(base+Vector2(0,3),Vector2(size.x*0.37,9),Color(0.22,0.09,0.04,0.40))
+			draw_texture_rect_region(VerandaArt.COVER,sprite,VerandaArt.COVER_FRAMES[kind])
+		if state == "playing" and Veranda.reachable(node,player.x,_stage_width()):
+			var selected := veranda.target == node
+			var marked := veranda.resting == node
+			var color := Color("c6e9c7") if hard else GOLD
+			color.a = 0.90 if selected else 0.57 if marked else 0.32
+			var point := base+Vector2(0,12)
+			if selected: _veranda_ring(point,39.0,Color(color,0.13),10.0)
+			_veranda_ring(point,36.0,color,3.0 if selected else 2.0)
+
+func _veranda_wall_rect() -> Rect2:
+	var source := VerandaArt.WALL.get_size()
+	var travel := (_stage_width()-viewport_size.x)*0.85
+	var scale_value := maxf((viewport_size.x+travel)/source.x,(floor_y()-105.0)/(source.y*0.92))
+	var painted := source*scale_value
+	return Rect2(Vector2((viewport_size.x+travel-painted.x)*0.5-camera_x*0.85,floor_y()-painted.y*0.92),painted)
+
+func _veranda_rope() -> Vector2:
+	var wall_rect := _veranda_wall_rect()
+	return wall_rect.position+wall_rect.size*Vector2(865.0/1672.0,227.0/941.0)
+
+func _draw_veranda_wall() -> void:
+	var wall := VerandaArt.WALL
+	var rect := _veranda_wall_rect()
+	var scale_value := rect.size.x/wall.get_width()
+	var origin := rect.position
+	draw_rect(Rect2(Vector2.ZERO,viewport_size),Color("50362c"))
+	var floor_start := origin.y+rect.size.y
+	var floor_remaining := viewport_size.y-floor_start
+	if floor_remaining > 0.0:
+		var height := minf(floor_remaining,120.0*scale_value)
+		draw_texture_rect_region(wall,Rect2(origin.x,floor_start,rect.size.x,height),Rect2(0,941.0-height/scale_value,1672,height/scale_value))
+	draw_texture_rect(wall,rect,false)
+	for window in VerandaArt.WINDOWS:
+		var cut := window.grow(-5.0)
+		var drift := clampf((camera_x-(_stage_width()-viewport_size.x)*0.5)*0.45/scale_value,-29.0,29.0)
+		var sample := cut.grow(-24.0)
+		sample.position.x += drift
+		var portal := Rect2(origin+cut.position*scale_value,cut.size*scale_value)
+		draw_texture_rect_region(wall,portal,sample)
+		draw_rect(portal,Color(0.16,0.24,0.17,0.09))
+	_draw_veranda_school_life(origin,scale_value)
+	if not reduce_motion: _draw_veranda_ambient(origin,scale_value)
+	_draw_veranda_bell(origin,scale_value)
+
+func _draw_veranda_ambient(origin: Vector2, scale_value: float) -> void:
+	var fan := origin+Vector2(1325,349)*scale_value
+	for blade in range(3):
+		var angle := elapsed*4.7+blade*TAU/3.0
+		var direction := Vector2(cos(angle),sin(angle)*0.29)
+		draw_line(fan+direction*8.0*scale_value,fan+direction*56.0*scale_value,Color("7c4c28"),5.0*scale_value,true)
+	draw_circle(fan,6.0*scale_value,Color("8e5e33"),true,-1.0,true)
+	for i in range(12):
+		var offset := Vector2(784+(i%3)*27,392+i*22)*scale_value
+		offset += Vector2(sin(elapsed*0.91+i*1.5)*8.0,cos(elapsed*0.8+i)*4.0)*scale_value
+		_oval(origin+offset,Vector2(9.0,4.0)*scale_value,Color(0.34,0.23,0.12,0.17))
+	for i in range(26):
+		var x := fposmod(i*151.0+elapsed*(7.0+i%4)-camera_x*0.46,viewport_size.x+20.0)
+		var y := floor_y()-fposmod(i*79.0+elapsed*8.0,maxf(1.0,floor_y()*0.65))
+		draw_circle(Vector2(x,y),1.1+i%3*0.4,Color(1,0.82,0.48,0.12+i%4*0.052),true,-1.0,true)
+
+func _draw_veranda_bell(origin: Vector2, scale_value: float) -> void:
+	var rope := origin+Vector2(865,227)*scale_value
+	var active := veranda.bell_time/2.65
+	var sway := 0.0
+	if not reduce_motion:
+		sway = sin(elapsed*(10.5 if active>0.0 else 1.8))*(5.0+24.0*active)
+	var end := rope+Vector2(sway,108.0)*scale_value
+	draw_line(rope,end,Color("694222"),3.8*scale_value,true)
+	draw_circle(end,6.0*scale_value,Color("e3b961") if veranda.bell_cooldown<=0.0 else Color("a47135"),true,-1.0,true)
+	if active>0.0:
+		for side in [-1,1]:
+			var center := rope+Vector2(side*36.0,-25.0)*scale_value
+			var angle := 0.0 if side>0 else PI
+			draw_arc(center,(24.0+sin(elapsed*9.0)*5.0)*scale_value,angle-0.64,angle+0.64,16,Color(1,0.84,0.46,0.82*active),3.0,true)
+
+func _draw_veranda_school_life(origin: Vector2, scale_value: float) -> void:
+	var drift := camera_x*0.45
+	var shade := Color(0.73,0.69,0.49,0.89)
+	var teacher := origin+Vector2(1335,560)*scale_value+Vector2(drift*0.06,0)
+	if not reduce_motion: teacher.x += sin(elapsed*0.9)*9.0*scale_value
+	_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[0],teacher,91.0*scale_value,shade)
+	for i in range(3):
+		var seat := origin+Vector2(1112.0+i*92.0,626.0-i*13.0)*scale_value+Vector2(drift*0.07,0)
+		_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[3],seat,57.0*scale_value,Color(0.67,0.66,0.50,0.84))
+	var motion_frame := 0 if reduce_motion else int(elapsed*2.7)%2
+	var peon := origin+Vector2(322.0+sin(elapsed*0.6)*13.0,613.0)*scale_value
+	var friends := origin+Vector2(578,621)*scale_value
+	_draw_scene_sprite(VerandaArt.LIFE,VerandaArt.life_frame(motion_frame),peon,76.0*scale_value,shade)
+	_draw_scene_sprite(VerandaArt.LIFE,VerandaArt.life_frame(2+motion_frame),friends,66.0*scale_value,shade)
+
+func _draw_veranda_foreground() -> void:
+	var scroll := camera_x*1.3
+	var stage_width := _stage_width()
+	var g := floor_y()
+	for rail in [0.035,0.48,0.83,1.08]:
+		var x := stage_width*float(rail)-scroll
+		if x < -160.0 or x > viewport_size.x+160.0: continue
+		var hero_x := player.x-camera_x
+		var actor_gap := minf(absf(x-hero_x),absf(x-(master_x-camera_x)))
+		var alpha := lerpf(0.20,0.75,smoothstep(45.0,145.0,actor_gap))
+		var post := VerandaArt.foreground_frame(0)
+		var height := g*0.93
+		var width := height*post.size.x/post.size.y*0.55
+		draw_texture_rect_region(VerandaArt.FOREGROUND,Rect2(x-width*0.5,g+70-height,width,height),post,Color(0.42,0.35,0.28,alpha))
+	var vine := VerandaArt.foreground_frame(1)
+	for i in range(3):
+		var sway := sin(elapsed*1.2+i)*7.0 if not reduce_motion else 0.0
+		var x := i*stage_width*0.52-scroll-100.0+sway
+		draw_texture_rect_region(VerandaArt.FOREGROUND,Rect2(x,0,440.0,440.0*vine.size.y/vine.size.x),vine,Color(0.62,0.59,0.42,0.87))
+	var fern := VerandaArt.foreground_frame(2)
+	var x := stage_width*0.72-scroll
+	draw_texture_rect_region(VerandaArt.FOREGROUND,Rect2(x-90,g+25,180,190),fern,Color(0.45,0.49,0.34,0.78))
+
+func _draw_veranda_grade() -> void:
+	var w := viewport_size.x
+	var h := viewport_size.y
+	draw_rect(Rect2(0,0,w,h),Color(0.63,0.34,0.12,0.05))
+	var dark := Color(0.16,0.075,0.025,0.22)
+	var clear := Color(dark,0.0)
+	for side in [-1.0,1.0]:
+		var x := 0.0 if side>0 else w
+		draw_polygon(PackedVector2Array([Vector2(x,0),Vector2(x+w*0.19*side,0),Vector2(x+w*0.19*side,h),Vector2(x,h)]),PackedColorArray([dark,clear,clear,dark]))
+	for i in range(72):
+		var x := fposmod(i*103.0+floorf(elapsed*8)*29.0,w)
+		var y := fposmod(i*83.0+floorf(elapsed*8)*13.0,h)
+		draw_rect(Rect2(x,y,1.4,1.4),Color(0.31,0.17,0.09,0.16))
 
 func _draw_classroom() -> void:
 	var w := _stage_width()

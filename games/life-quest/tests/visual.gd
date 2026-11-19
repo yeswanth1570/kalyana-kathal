@@ -64,13 +64,19 @@ func run() -> void:
 	game.elapsed=0.4
 	game._tick(.016)
 	await capture("school-crowd-portrait")
+	game.veranda.watch=game.Veranda.Watch.SUSPICIOUS
+	game.veranda.grace=1.2
 	game.master_turn=0.60
 	game.school.turn_face=-1
 	await capture("school-pivot-portrait")
 	game.master_turn=0.0
+	game.veranda.turn_from=1.0
+	for i in range(8):
+		game.veranda.turn_left=game.Veranda.TURN_DURATION*(1.0-(i+0.25)/8.0)
+		await capture("veranda-turn-%02d"%i)
+	game.veranda.turn_left=0.0
 
-	game.held["sneak"]=true
-	game.held["right"]=true
+	game._veranda_choose(1)
 	for i in range(10):
 		game._tick(.016)
 	await capture("sneak-stride-portrait")
@@ -81,7 +87,7 @@ func run() -> void:
 		game.school_step_phase=float(i)/8.0
 		await capture("school-crouch-%02d-portrait"%i)
 	game.held.clear()
-	game.player.x=game._stage_width()-110
+	game.player=game._veranda_base(5)
 	game.master_x=game.player.x-120
 	game.awareness=43.0
 	game.face_frame=0
@@ -90,7 +96,8 @@ func run() -> void:
 	game._update_hud()
 	await capture("scroll-reaction-portrait")
 	game._start_stage()
-	game.player.x=game._cover_positions()[1]
+	game.player=game._veranda_base(3)
+	game.veranda.resting=3
 	game.master_x=game.player.x+260.0
 	game.awareness=44.0
 	game.held["hide"]=true
@@ -120,6 +127,9 @@ func run() -> void:
 	root.size=Vector2i(360,740)
 	await process_frame
 	game._resize()
+	game.school.level=0
+	game._start_stage()
+	await capture("veranda-compact")
 	game.school.level=1
 	game._start_stage()
 	game.player.x=game._note_position()

@@ -4,7 +4,7 @@ enum Level { CORRIDOR, CLASSROOM, WALK_HOME }
 enum Gaze { WRITING, TURNING_TO_CLASS, WATCHING, TURNING_TO_BOARD }
 
 const TITLES := ["Before the Bell", "The Last Bench", "The Walk Home"]
-const TIMES := [28.0, 52.0, 0.0]
+const TIMES := [48.0, 52.0, 0.0]
 const BENCHES := [0.15, 0.35, 0.55, 0.75]
 const TEACHER_X := 0.89
 const BUS_STOP := 0.89
@@ -13,7 +13,7 @@ const STALL := 0.48
 const BIKE_PERIOD := 4.8
 const BIKE_TRAVEL := 1.25
 const PROMPTS := [
-	"Tap Duck and slip between carts when Sundaram turns. Reach the classroom door.",
+	"Carry the note to the gate. Tap cover to sneak and tap the bell rope to distract Sundaram. On keyboard, use A/D to move, S to crouch, W for the next cover, and Shift to Dash.",
 	"Move while Ms. Revathi writes. Duck behind a desk when she turns. Offer the note at the front bench.",
 	"Watch for bicycles at the two crossings. Meet Sharmila at the bus stop."
 ]

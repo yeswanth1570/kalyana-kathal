@@ -4,6 +4,7 @@ var checks := 0
 var failed := 0
 var game: Node
 const School = preload("res://SchoolChapter.gd")
+const Veranda = preload("res://Veranda.gd")
 const Story = preload("res://Stages.gd")
 
 func _initialize() -> void:
@@ -218,33 +219,42 @@ func run() -> void:
 	game._jump()
 	game._fire()
 	check(game.parry_time==0 and game.velocity.y==0 and game.shots.is_empty(),"School has stealth controls without combat attacks")
-	check(not game.control_rects.has("pencil"),"Before the Bell hides unavailable pencil controls")
-	var duck_tap := InputEventScreenTouch.new()
-	duck_tap.position=game.control_rects.sneak.get_center()
-	duck_tap.index=0
-	duck_tap.pressed=true
-	game._input(duck_tap)
-	duck_tap.pressed=false
-	game._input(duck_tap)
-	game._tick(.016)
-	check(game.school_duck_latched and game.school_ducking,"Duck remains latched after a tap is released")
-	var pad_press := InputEventScreenTouch.new()
-	pad_press.index=1
-	pad_press.pressed=true
-	pad_press.position=game.control_rects.left.get_center()
-	game._input(pad_press)
-	var drag := InputEventScreenDrag.new()
-	drag.index=1
-	drag.position=game.control_rects.right.get_center()
-	game._input(drag)
-	check(not game._held("left") and game._held("right"),"Sliding across the movement pad reverses direction")
-	drag.position=game.control_rects.sneak.get_center()
-	game._input(drag)
-	check(not game._held("right") and game.school_duck_latched,"Dragging off movement stops and never toggles an action")
-	pad_press.pressed=false
-	game._input(pad_press)
+	check(game.control_rects.keys()==["dash"],"The veranda shows a single Dash control")
+	check(not game._veranda_choose(Veranda.END),"Out-of-reach cover cannot be selected")
+	var cover_tap := InputEventScreenTouch.new()
+	cover_tap.position=game._veranda_base(1)-Vector2(0,55)
+	cover_tap.index=0
+	cover_tap.pressed=true
+	game._input(cover_tap)
+	cover_tap.pressed=false
+	game._input(cover_tap)
+	check(game.veranda.target==1,"Touch selects the tapped world-space cover")
+	for i in range(135): game._tick(1.0/60.0)
+	check(game.veranda.resting==1 and game.school_ducking,"Sneaking snaps to cover and auto-crouches")
+	check(Veranda.concealment(1,true,220.0) and not Veranda.concealment(1,true,64.0),"Soft cover only protects at a distance")
+	check(Veranda.concealment(3,true,0.0),"Hard cover conceals even at point-blank range")
+	game.master_x=game.player.x+150
+	game._dash()
+	check(game.veranda.sprint and game.veranda.ripple>0.0,"Tapping Dash sprints to the next cover and creates a ripple")
+	check(game.veranda.watch==Veranda.Watch.SUSPICIOUS and is_equal_approx(game.veranda.grace,1.2),"An audible Dash gives Sundaram a 1.2-second grace window")
+	game._tick(.25)
+	check(game.hp==3 and game.awareness<100.0,"Suspicion grants time to move before it can catch the player")
+	var puddle: float = game._stage_width()*Veranda.PATCHES[0]
+	game.player.x=puddle+3.0
+	game.master_x=puddle+120.0
+	game._veranda_floor_noise(puddle-45.0)
+	check(game.veranda.splash and game.awareness>=40.0,"Dashing through water raises awareness with a louder ripple")
 	game._start_stage()
-	check(not game.school_duck_latched,"Restart clears the latched stance")
+	var guard_before_bell: float = game.master_x
+	var pull: Vector2 = game._veranda_rope()+Vector2(0,32)
+	check(game._veranda_tap(pull) and game.veranda.bell_time>0.0,"The visible brass rope is a world-space distraction")
+	game._tick(.15)
+	check(game.master_facing==1.0,"The guard keeps his sight direction during turn anticipation")
+	for i in range(40): game._tick(.016)
+	check(game.master_x<guard_before_bell,"The bell draws Sundaram back to investigate")
+	for pose in range(8):
+		var remaining := Veranda.TURN_DURATION*(1.0-(pose+0.25)/8.0)
+		check(Veranda.turn_pose(remaining,false)==pose,"Guard pivot shows ordered pose %d"%(pose+1))
 	check(game.SchoolArt.master_frame(false,false,false,true,.5,false,0)==4,"Patrol turns transition through the canonical front pose")
 	var motion = game.SchoolMotion
 	check(motion.step_index(motion.advance_step(0.0,20.0,false))==1,"Running advances one of eight poses per 20 world pixels")
@@ -259,41 +269,32 @@ func run() -> void:
 		check(travel.x*travel.y<0.0,"Student %d follows the slope of the corridor"%(index+1))
 		check((motion.student_scale(end_feet)-motion.student_scale(start_feet))*travel.x<0.0,"Student %d scales with projected depth"%(index+1))
 
-	game.master_facing=1
-	game.player.x=game._cover_positions()[2]
-	game.master_x=game.player.x-130.0
-	game._tick(.1)
-	check(game.awareness>0 and not game.hidden_in_cover,"Standing behind a cart is visible")
-	game.held["sneak"]=true
-	game._tick(.1)
-	check(game.school_ducking and game.hidden_in_cover and game.awareness<6.2,"Ducking behind the cart occludes Sundaram’s view")
-	game.player.x=game.master_x+190
-	game.awareness=0
-	game._tick(.1)
-	check(game.school_ducking and not game.hidden_in_cover and game.awareness>0,"Ducking in the open slows but does not remove detection")
-	var phase_before: float = game.school_step_phase
-	game.awareness=35
-	game._update_school_mood(0.0,0.0,false)
-	check(game.school_mood==motion.Mood.WORRIED,"Murugan looks worried at 35 percent")
-	game.awareness=70
-	game._update_school_mood(0.0,35.0,false)
-	check(game.school_mood==motion.Mood.ALARMED,"Murugan looks alarmed at 70 percent")
-	game.awareness=68
-	game._update_school_mood(0.0,70.0,false)
-	check(game.school_mood==motion.Mood.ALARMED,"Alarm stays steady just below its entry threshold")
-	game.player.x=game._cover_positions()[2]
-	game._tick(.016)
-	check(game.school_mood==motion.Mood.RELIEVED and is_equal_approx(game.school_relief,.5),"Reaching cover from danger triggers relief for half a second")
-	check(game.school_step_phase==phase_before,"Changing expression leaves the crouch phase alone")
-	game._update_school_mood(.51,68.0,false)
-	check(game.school_mood!=motion.Mood.RELIEVED,"Relief expires after the cover reaction")
 	game._start_stage()
-	game.master_x=600
+	game.player=game._veranda_base(3)
+	game.veranda.resting=3
+	game.master_x=game.player.x
+	game._tick(.016)
+	check(game.veranda.checkpoint==3 and game.hidden_in_cover,"Arriving inside a hard doorway records a checkpoint")
+	game.player.x+=125.0
+	game.veranda.resting=-1
+	game.master_x=game.player.x-60.0
 	game.master_facing=1
-	game.awareness=99
-	game.player.x=690
-	game._tick(.05)
-	check(game.state=="school_result" and game.school.reason=="caught" and game.school.turn_limit()==4,"Capture opens a harder debrief immediately")
+	game.veranda.watch=Veranda.Watch.SUSPICIOUS
+	game.veranda.grace=0.0
+	game.awareness=99.0
+	game._tick(.04)
+	check(game.veranda.watch==Veranda.Watch.CAUGHT and game.hp==2 and game.player==game._veranda_base(3),"Caught at full awareness loses one HP and returns to the last hard cover")
+	game._tick(.12)
+	check(game.hp==2 and game.state=="playing","Recovery prevents repeat damage")
+	game.hp=1
+	game.veranda.watch=Veranda.Watch.SUSPICIOUS
+	game.veranda.grace=0.0
+	game.veranda.resting=-1
+	game.player.x=game.master_x+75.0
+	game.awareness=99.0
+	game._tick(.04)
+	game._tick(.70)
+	check(game.state=="school_result" and game.school.reason=="caught" and game.school.turn_limit()==4,"The last lost HP opens the parent–teacher meeting")
 	game._end_school("success","reached")
 	check(game.school.outcome=="failure","Duplicate terminal events cannot replace a captured result")
 	check(game.school.meeting_pending and game._agent_name().contains("Amma"),"A catch brings the parent and the responsible teacher into the meeting")
@@ -310,10 +311,10 @@ func run() -> void:
 	game._load_progress()
 	check(game.school.supervised and not game.school.meeting_pending,"Reload preserves the supervised route")
 	game._start_stage()
-	game.master_x=game._stage_width()-191.0
+	game.master_x=game._stage_width()*.90-1.0
 	game._tick(.016)
-	check(game.master_turn>3.0,"Supervision gives Sundaram a longer stop")
-	game.player.x=game._stage_width()-72.0
+	check(game.master_turn>2.5,"Supervision gives Sundaram a longer stop")
+	game.player=game._veranda_base(Veranda.END)
 	game._tick(.016)
 	game._school_choice(true)
 	game._resolve_school("pass")
