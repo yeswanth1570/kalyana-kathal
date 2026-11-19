@@ -921,7 +921,11 @@ func _note_position() -> float:
 	return _stage_width()*float(School.BENCHES[-1])
 
 func _can_offer_note() -> bool:
-	return stage == 0 and state == "playing" and school.level == School.Level.CLASSROOM and school.note_time == 0.0 and school.gaze(elapsed) == School.Gaze.WRITING and absf(player.x-_note_position()) <= 75.0
+	if stage != 0 or state != "playing" or school.level != School.Level.CLASSROOM:
+		return false
+	if school.note_time > 0.0 or school.gaze(elapsed) != School.Gaze.WRITING:
+		return false
+	return player.x >= _note_position()-80.0 and player.x <= _sharmila_desk().x+30.0
 
 func _school_interact() -> void:
 	if not _can_offer_note(): return

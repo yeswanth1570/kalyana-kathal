@@ -333,6 +333,10 @@ func run() -> void:
 	game.player.x=(game._cover_positions()[0]+game._cover_positions()[1])*0.5
 	game._tick(.016)
 	check(not game.hidden_in_cover and game.awareness>0,"A crouched player in the aisle can still be seen")
+	game.player.x=game._note_position()+100.0
+	game.elapsed=1.0
+	check(game._can_offer_note(),"Standing beside Sharmila can trigger the note handoff")
+	game.elapsed=5.0
 	game.player.x=game._note_position()
 	game._school_interact()
 	check(game.school.note_time==0.0 and not game.school_action_button.visible,"Revathi watching blocks the note action")
