@@ -1,10 +1,10 @@
 extends RefCounted
 
 const School = preload("res://SchoolChapter.gd")
-const CLASSROOM: Texture2D = preload("res://art/classroom-v9.png")
-const HOME: Texture2D = preload("res://art/walk-home-v9.png")
-const CAST: Texture2D = preload("res://art/school-cast-v9.png")
-const STREET: Texture2D = preload("res://art/street-props-v9.png")
+const CLASSROOM: Texture2D = preload("res://art/stages/classroom-v9.png")
+const HOME: Texture2D = preload("res://art/stages/walk-home-v9.png")
+const CAST: Texture2D = preload("res://art/characters/school-cast-v9.png")
+const STREET: Texture2D = preload("res://art/props/street-props-v9.png")
 
 const CAST_FRAMES: Array[Rect2] = [
 	Rect2(179,9,184,495), Rect2(674,10,166,494), Rect2(1168,9,224,496),

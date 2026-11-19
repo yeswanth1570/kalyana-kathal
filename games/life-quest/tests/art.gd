@@ -10,11 +10,12 @@ func check(ok: bool, message: String) -> void:
 		failed+=1
 		push_error(message)
 func _initialize() -> void:
-	for name in ["cover","school","college","office","family","wedding"]:
-		var image := (load("res://art/"+name+"-v2.png") as Texture2D).get_image()
-		check(image!=null and image.get_width()>=1600 and image.get_height()>=900,name+" production background exists")
+	for path in ["ui/cover","stages/school","stages/college","stages/office","stages/family","stages/wedding"]:
+		var image := (load("res://art/"+path+"-v2.png") as Texture2D).get_image()
+		check(image!=null and image.get_width()>=1600 and image.get_height()>=900,path+" production background exists")
 	for item in [["hero_sheet-v2",4,4],["cast_sheet-v2",3,2],["hero-run-alpha-v3",4,4],["master-walk-v3",2,2],["reaction-faces-v5",2,2],["school-poses-v6",4,2],["school-master-v7",4,2],["school-hero-v7",4,2],["school-props-v7",2,2],["school-students-v7",4,2]]:
-		var image := (load("res://art/"+item[0]+".png") as Texture2D).get_image()
+		var folder := "props" if item[0]=="school-props-v7" else "characters"
+		var image := (load("res://art/%s/%s.png"%[folder,item[0]]) as Texture2D).get_image()
 		check(image.detect_alpha()!=Image.ALPHA_NONE,item[0]+" has genuine alpha")
 		check(image.get_pixel(0,0).a<0.05,item[0]+" has a transparent outer corner")
 		var cell := Vector2i(image.get_width()/item[1],image.get_height()/item[2])

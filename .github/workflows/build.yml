@@ -61,13 +61,15 @@ jobs:
         run: |
           export_life_quest() {
             local source="$1" destination="$2" executable="$3"
+            local cover="$source/art/ui/cover-v2.png"
+            if [[ ! -f "$cover" ]]; then cover="$source/art/cover-v2.png"; fi
             mkdir -p "$destination"
             godot --headless --path "$source" --export-release Web "$destination/$executable.html"
             cp "$destination/$executable.html" "$destination/index.html"
-            cp "$source/web/chat.js" "$source/web/chat.css" "$source/art/cover-v2.png" "$destination/"
+            cp "$source/web/chat.js" "$source/web/chat.css" "$cover" "$destination/"
             cp "$source/fonts/CinzelDecorative-Bold.ttf" "$source/fonts/CinzelDecorative-OFL.txt" "$destination/"
           }
-          export_life_quest games/life-quest "$PWD/build/web/life-quest-preview" game-v10
+          export_life_quest games/life-quest "$PWD/build/web/life-quest-preview" game-v11
           # Keep the public stable game on its last tested release until device sign-off.
           git worktree add --detach "$RUNNER_TEMP/kalyana-stable" 7561aca9e89f622e60423fb49e42ae62ef1ce355
           stable="$RUNNER_TEMP/kalyana-stable/games/life-quest"
@@ -80,8 +82,8 @@ jobs:
           test -s build/web/life-quest/index.html
           test -s build/web/life-quest/chat.js
           test -s build/web/life-quest/chat.css
-          test -s build/web/life-quest-preview/game-v10.pck
-          test -s build/web/life-quest-preview/game-v10.wasm
+          test -s build/web/life-quest-preview/game-v11.pck
+          test -s build/web/life-quest-preview/game-v11.wasm
           test -s build/web/life-quest/game-v5.pck
           test -s build/web/life-quest-preview/index.html
           if grep -q '\$GODOT_' build/web/life-quest*/index.html; then exit 1; fi

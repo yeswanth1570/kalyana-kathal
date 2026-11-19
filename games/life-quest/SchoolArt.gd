@@ -1,7 +1,7 @@
 extends RefCounted
 
 # Rectangles trim the empty space in the original art while retaining natural proportions.
-const HERO: Texture2D = preload("res://art/school-hero-v7.png")
+const HERO: Texture2D = preload("res://art/characters/school-hero-v7.png")
 const HERO_FRAMES: Array[Rect2] = [
 	Rect2(137, 15, 178, 428),
 	Rect2(496, 29, 317, 414),
@@ -12,7 +12,7 @@ const HERO_FRAMES: Array[Rect2] = [
 	Rect2(987, 560, 224, 312),
 	Rect2(1421, 559, 295, 313),
 ]
-const MASTER: Texture2D = preload("res://art/school-master-v7.png")
+const MASTER: Texture2D = preload("res://art/characters/school-master-v7.png")
 const MASTER_FRAMES: Array[Rect2] = [
 	Rect2(97, 17, 269, 419),
 	Rect2(539, 56, 241, 379),
@@ -23,28 +23,28 @@ const MASTER_FRAMES: Array[Rect2] = [
 	Rect2(971, 461, 253, 422),
 	Rect2(1403, 460, 332, 423),
 ]
-const PROPS: Texture2D = preload("res://art/school-props-v7.png")
+const PROPS: Texture2D = preload("res://art/props/school-props-v7.png")
 const PROPS_FRAMES: Array[Rect2] = [
 	Rect2(28, 166, 567, 389),
 	Rect2(666, 175, 557, 366),
 	Rect2(11, 770, 606, 392),
 	Rect2(665, 644, 559, 557),
 ]
-const RUN: Texture2D = preload("res://art/school-run-v8.png")
+const RUN: Texture2D = preload("res://art/characters/school-run-v8.png")
 const RUN_FRAMES: Array[Rect2] = [
 	Rect2(83, 13, 250, 427), Rect2(512, 25, 245, 409),
 	Rect2(995, 21, 199, 416), Rect2(1382, 16, 286, 398),
 	Rect2(81, 457, 254, 423), Rect2(513, 471, 246, 405),
 	Rect2(982, 465, 217, 413), Rect2(1383, 459, 283, 392),
 ]
-const CROUCH: Texture2D = preload("res://art/school-crouch-v8.png")
+const CROUCH: Texture2D = preload("res://art/characters/school-crouch-v8.png")
 const CROUCH_FRAMES: Array[Rect2] = [
 	Rect2(79, 36, 302, 383), Rect2(525, 36, 259, 380),
 	Rect2(971, 36, 257, 380), Rect2(1388, 36, 331, 379),
 	Rect2(70, 480, 271, 378), Rect2(525, 481, 259, 378),
 	Rect2(970, 480, 258, 378), Rect2(1364, 481, 352, 376),
 ]
-const REACTIONS: Texture2D = preload("res://art/school-reactions-v8.png")
+const REACTIONS: Texture2D = preload("res://art/characters/school-reactions-v8.png")
 const TRANSITION_FRAMES: Array[Rect2] = [
 	Rect2(546, 23, 206, 417), Rect2(986, 78, 222, 362), Rect2(1422, 143, 245, 297),
 ]
@@ -52,7 +52,7 @@ const HEAD_FRAMES: Array[Rect2] = [
 	Rect2(83, 508, 294, 326), Rect2(528, 507, 295, 327),
 	Rect2(970, 504, 293, 329), Rect2(1412, 507, 292, 327),
 ]
-const STUDENTS: Texture2D = preload("res://art/school-students-v8.png")
+const STUDENTS: Texture2D = preload("res://art/characters/school-students-v8.png")
 const STUDENTS_FRAMES: Array[Rect2] = [
 	Rect2(74, 15, 199, 337), Rect2(478, 15, 116, 336), Rect2(839, 15, 123, 336),
 	Rect2(68, 378, 214, 333), Rect2(478, 378, 133, 334), Rect2(840, 378, 136, 334),

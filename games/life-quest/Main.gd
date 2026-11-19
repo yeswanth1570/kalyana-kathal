@@ -4,15 +4,15 @@ const School = preload("res://SchoolChapter.gd")
 const SchoolScenes = preload("res://SchoolScenes.gd")
 const Story = preload("res://Stages.gd")
 const DISPLAY_FONT: Font = preload("res://fonts/CinzelDecorative-Bold.ttf")
-const COVER: Texture2D = preload("res://art/cover-v2.png")
-const HERO_SHEET: Texture2D = preload("res://art/hero_sheet-v2.png")
-const HERO_RUN: Texture2D = preload("res://art/hero-run-alpha-v3.png")
-const REACTION_FACES: Texture2D = preload("res://art/reaction-faces-v5.png")
-const SCHOOL_OPENING: Texture2D = preload("res://art/school-opening-v6.png")
+const COVER: Texture2D = preload("res://art/ui/cover-v2.png")
+const HERO_SHEET: Texture2D = preload("res://art/characters/hero_sheet-v2.png")
+const HERO_RUN: Texture2D = preload("res://art/characters/hero-run-alpha-v3.png")
+const REACTION_FACES: Texture2D = preload("res://art/characters/reaction-faces-v5.png")
+const SCHOOL_OPENING: Texture2D = preload("res://art/story/school-opening-v6.png")
 const SchoolArt = preload("res://SchoolArt.gd")
 const SchoolMotion = preload("res://SchoolMotion.gd")
-const CAST_SHEET: Texture2D = preload("res://art/cast_sheet-v2.png")
-const SCENERY: Array[Texture2D] = [preload("res://art/school-v2.png"),preload("res://art/college-v2.png"),preload("res://art/office-v2.png"),preload("res://art/family-v2.png"),preload("res://art/wedding-v2.png")]
+const CAST_SHEET: Texture2D = preload("res://art/characters/cast_sheet-v2.png")
+const SCENERY: Array[Texture2D] = [preload("res://art/stages/school-v2.png"),preload("res://art/stages/college-v2.png"),preload("res://art/stages/office-v2.png"),preload("res://art/stages/family-v2.png"),preload("res://art/stages/wedding-v2.png")]
 const INK := Color("203936")
 const PAPER := Color("f6e9cf")
 const GOLD := Color("dca74e")
@@ -27,6 +27,7 @@ const ACTIVITIES := {
 }
 
 var school := School.new()
+var progress_path := SAVE
 var school_resolution := ""
 var school_action_button: Button
 var school_ducking := false
@@ -170,7 +171,7 @@ func _ready() -> void:
 
 func _setup_audio() -> void:
 	music = AudioStreamPlayer.new()
-	music.stream = preload("res://audio/cinema.wav")
+	music.stream = preload("res://audio/music/cinema.wav")
 	music.finished.connect(music.play)
 	music.volume_db = -22
 	add_child(music)
@@ -183,17 +184,17 @@ func _sound(kind: String) -> void:
 	if not sound_on:
 		return
 	match kind:
-		"bell": sfx.stream = preload("res://audio/school-bell.wav")
-		"whistle": sfx.stream = preload("res://audio/school-whistle.wav")
-		"hit": sfx.stream = preload("res://audio/hit.wav")
-		"parry": sfx.stream = preload("res://audio/parry.wav")
-		"win": sfx.stream = preload("res://audio/win.wav")
-		_: sfx.stream = preload("res://audio/letter.wav")
+		"bell": sfx.stream = preload("res://audio/sfx/school-bell.wav")
+		"whistle": sfx.stream = preload("res://audio/sfx/school-whistle.wav")
+		"hit": sfx.stream = preload("res://audio/sfx/hit.wav")
+		"parry": sfx.stream = preload("res://audio/sfx/parry.wav")
+		"win": sfx.stream = preload("res://audio/sfx/win.wav")
+		_: sfx.stream = preload("res://audio/sfx/letter.wav")
 	sfx.play()
 
 func _load_progress() -> void:
 	var cfg := ConfigFile.new()
-	if cfg.load(SAVE) == OK or cfg.load(LEGACY_SAVE) == OK:
+	if cfg.load(progress_path) == OK or (progress_path == SAVE and cfg.load(LEGACY_SAVE) == OK):
 		unlocked = clampi(int(cfg.get_value("progress", "unlocked", 0)), 0, 4)
 		completed = bool(cfg.get_value("progress", "completed", false))
 		school.unlocked = clampi(int(cfg.get_value("school", "unlocked", 2 if unlocked > 0 else 0)),0,2)
@@ -233,7 +234,7 @@ func _save_progress() -> void:
 	cfg.set_value("settings", "reduce_motion", reduce_motion)
 	cfg.set_value("settings", "auto_fire", auto_fire)
 	cfg.set_value("settings", "controls_version", 3)
-	var error := cfg.save(SAVE)
+	var error := cfg.save(progress_path)
 	if error != OK:
 		push_warning("Progress could not be saved on this device (%s)." % error)
 
@@ -671,6 +672,7 @@ func _make_hud() -> void:
 		school_action_button = _button(hud,"Offer Note [E]",_school_interact,true)
 		_compact_button(school_action_button)
 		school_action_button.position = Vector2(viewport_size.x-204*ui_scale,y-62*ui_scale)
+		school_action_button.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 		school_action_button.focus_mode = Control.FOCUS_NONE
 		school_action_button.hide()
 	if ACTIVITIES.has(stage):

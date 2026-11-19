@@ -3,11 +3,12 @@ from pathlib import Path
 import math, random, struct, wave
 
 ROOT = Path(__file__).parent / 'audio'
-ROOT.mkdir(exist_ok=True)
 RATE = 22050
 
-def write(name, samples):
-    with wave.open(str(ROOT / (name + '.wav')), 'wb') as out:
+def write(name, samples, folder='sfx'):
+    destination = ROOT / folder
+    destination.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(destination / (name + '.wav')), 'wb') as out:
         out.setparams((1, 2, RATE, 0, 'NONE', 'not compressed'))
         out.writeframes(b''.join(struct.pack('<h', int(max(-1, min(1, n)) * 24000)) for n in samples))
 
@@ -46,5 +47,5 @@ for b in range(48):
     for i in range(int(.035*RATE)):
         p=int(b*beat*RATE)+i
         if p<len(data):data[p]+=random.uniform(-1,1)*.03*math.exp(-i/(RATE*.009))
-write('cinema',data)
+write('cinema',data,folder='music')
 print('Created 5 original WAV assets')

@@ -74,7 +74,7 @@ Install the matching Godot 4.7.2 export templates. From this project's folder:
 ```sh
 mkdir -p build/web
 godot --headless --export-release Web build/web/index.html
-# Also copy web/chat.js, web/chat.css, art/cover-v2.png, and
+# Also copy web/chat.js, web/chat.css, art/ui/cover-v2.png, and
 # fonts/CinzelDecorative-Bold.ttf into build/web/
 python -m http.server 8000 --directory build/web
 ```

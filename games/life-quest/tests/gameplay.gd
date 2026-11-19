@@ -18,14 +18,12 @@ func check(condition: bool, message: String) -> void:
 
 func run() -> void:
 	game = load("res://Main.tscn").instantiate()
+	game.progress_path = "user://gameplay-test-%d.cfg" % OS.get_process_id()
 	root.add_child(game)
 	await process_frame
 	game.set_process(false)
 	game.music.stop()
-	# Keep tests from overwriting the player's real progress or settings.
-	var save_path: String = ProjectSettings.globalize_path("user://school-preview.cfg")
-	var had_save := FileAccess.file_exists(save_path)
-	var saved_bytes := FileAccess.get_file_as_bytes(save_path) if had_save else PackedByteArray()
+	var save_path: String = ProjectSettings.globalize_path(game.progress_path)
 	game.sound_on = false
 	game.gentle = true
 	game.auto_fire = false
@@ -211,6 +209,7 @@ func run() -> void:
 	check(game.landing_pose>0,"Jump ends in a landing pose")
 	game.stage=0
 	game.school.level=0
+	game.school.checkpoint=0
 	game.school.meeting_pending=false
 	game.school.supervised=false
 	game.school.honor_pass=false
@@ -429,11 +428,7 @@ func run() -> void:
 	game._load_progress()
 	check(game.school.level==School.Level.CLASSROOM and game.school.supervised and game.school.honor_pass and not game.school.meeting_pending,"Old repair and Honor Pass carry into the new classroom")
 	game.qwen.cancel()
-	if had_save:
-		var file := FileAccess.open(save_path,FileAccess.WRITE)
-		file.store_buffer(saved_bytes)
-	else:
-		DirAccess.remove_absolute(save_path)
+	DirAccess.remove_absolute(save_path)
 	print("RESULT: %d checks, %d failures"%[checks,failed])
 	game.queue_free()
 	await process_frame

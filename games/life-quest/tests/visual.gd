@@ -15,12 +15,10 @@ func capture(name: String) -> void:
 	print("CAPTURE ",name)
 
 func run() -> void:
-	var save_path := ProjectSettings.globalize_path("user://school-preview.cfg")
-	var had_save := FileAccess.file_exists(save_path)
-	var saved_bytes := FileAccess.get_file_as_bytes(save_path) if had_save else PackedByteArray()
 	root.content_scale_size=Vector2i(1100,700)
 	root.size=Vector2i(1100,700)
 	game=load("res://Main.tscn").instantiate()
+	game.progress_path="user://visual-test-%d.cfg"%OS.get_process_id()
 	root.add_child(game)
 	await process_frame
 	game.set_process(false)
@@ -166,11 +164,8 @@ func run() -> void:
 	game._impact(game.boss_position()+Vector2(-35,-67),"POW!")
 	game.boss_flash=0.1
 	await capture("impact-landscape")
-	if had_save:
-		var save := FileAccess.open(save_path,FileAccess.WRITE)
-		save.store_buffer(saved_bytes)
-	else:
-		DirAccess.remove_absolute(save_path)
+	if FileAccess.file_exists(game.progress_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(game.progress_path))
 	game.queue_free()
 	await process_frame
 	quit()
