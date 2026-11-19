@@ -16,7 +16,7 @@ function Test-CharacterAPI([string]$base) {
 if ($Preview -and (Test-CharacterAPI 'http://127.0.0.1:8787')) {
     $header = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($accessFile).Trim() }
     $currentApi = Invoke-RestMethod 'http://127.0.0.1:8787/api/health' -Headers $header -TimeoutSec 6
-    if ($currentApi.school_protocol -ne 2) {
+    if ($currentApi.school_protocol -ne 3) {
         $ownedPidFile = Join-Path $privateDir 'server.pid'
         if (-not (Test-Path -LiteralPath $ownedPidFile)) { throw 'Update the running character API before opening the school preview.' }
         $ownedId = [int]([IO.File]::ReadAllText($ownedPidFile).Trim())
@@ -48,18 +48,22 @@ if (Test-Path -LiteralPath $connectionFile) {
 if (-not $relay) {
     $cloudflared = (Get-Command $CloudflaredPath -ErrorAction Stop).Source
     $relayLog = Join-Path $privateDir 'relay-error.log'
-    $relayProcess = Start-Process -FilePath $cloudflared -ArgumentList 'tunnel','--no-autoupdate','--protocol','http2','--url','http://127.0.0.1:8787' -WorkingDirectory $backend -WindowStyle Hidden -RedirectStandardOutput (Join-Path $privateDir 'relay-output.log') -RedirectStandardError $relayLog -PassThru
+    $relayProcess = Start-Process -FilePath $cloudflared -ArgumentList 'tunnel','--no-autoupdate','--protocol','http2','--edge-ip-version','4','--url','http://127.0.0.1:8787' -WorkingDirectory $backend -WindowStyle Hidden -RedirectStandardOutput (Join-Path $privateDir 'relay-output.log') -RedirectStandardError $relayLog -PassThru
     Set-Content -LiteralPath (Join-Path $privateDir 'relay.pid') -Value $relayProcess.Id
-    for ($attempt=0; $attempt -lt 45; $attempt++) {
+    $relayDeadline = [DateTime]::UtcNow.AddSeconds(50)
+    while ([DateTime]::UtcNow -lt $relayDeadline) {
         Start-Sleep -Seconds 1
         if ($relayProcess.HasExited) { throw 'Phone relay did not start. Check backend/.private/relay-error.log.' }
         if (Test-Path -LiteralPath $relayLog) {
             $found = [regex]::Match((Get-Content -LiteralPath $relayLog -Raw),'https://[a-z0-9-]+\.trycloudflare\.com')
-            if ($found.Success) { $relay = $found.Value; break }
+            if ($found.Success -and (Test-CharacterAPI $found.Value)) { $relay = $found.Value; break }
         }
     }
+    if (-not $relay) {
+        if (-not $relayProcess.HasExited) { Stop-Process -Id $relayProcess.Id }
+        throw 'The temporary phone relay did not become reachable. The PC game API is still available locally. Try again to create a working mobile link.'
+    }
 }
-if (-not $relay) { throw 'The relay has not returned an HTTPS address. Try again.' }
 $accessCode = [IO.File]::ReadAllText($accessFile).Trim()
 $gamePath = if ($Preview) { 'life-quest-preview' } else { 'life-quest' }
 $gameUrl = 'https://yeswanth1570.github.io/kalyana-kathal/' + $gamePath + '/'

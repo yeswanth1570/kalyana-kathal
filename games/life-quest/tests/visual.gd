@@ -1,6 +1,7 @@
 extends SceneTree
 
 var game: Node
+const School = preload("res://SchoolChapter.gd")
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -14,6 +15,9 @@ func capture(name: String) -> void:
 	print("CAPTURE ",name)
 
 func run() -> void:
+	var save_path := ProjectSettings.globalize_path("user://school-preview.cfg")
+	var had_save := FileAccess.file_exists(save_path)
+	var saved_bytes := FileAccess.get_file_as_bytes(save_path) if had_save else PackedByteArray()
 	root.content_scale_size=Vector2i(1100,700)
 	root.size=Vector2i(1100,700)
 	game=load("res://Main.tscn").instantiate()
@@ -51,10 +55,12 @@ func run() -> void:
 	await capture("dialogue-portrait")
 	game.stage=0
 	game.school.level=0
+	game.school.meeting_pending=false
+	game.school.supervised=false
 	game._show_intro()
 	await create_timer(0.45).timeout
 	await capture("school-opening-portrait")
-	game.school.level=2
+	game.school.level=0
 	game._start_stage()
 	await capture("stealth-portrait")
 	game.elapsed=0.4
@@ -98,28 +104,49 @@ func run() -> void:
 	await capture("school-caught-portrait")
 	game._school_choice(false)
 	await capture("school-repair-result-portrait")
+	game._resolve_school("conditional")
 	game.school.level=1
+	game.school.supervised=false
 	game._start_stage()
-	game.player.x=game._school_desks()[0]
+	game.player.x=game._note_position()
+	game._follow_camera(1.0)
 	game._update_hud()
-	await capture("school-notebooks-portrait")
+	await capture("classroom-writing-portrait")
+	game.elapsed=5.2
+	game._update_hud()
+	await capture("classroom-watching-portrait")
+	game.elapsed=7.6
+	game._school_interact()
+	game._tick(.18)
+	await capture("classroom-note-portrait")
 	root.size=Vector2i(360,740)
 	await process_frame
 	game._resize()
-	game.school.level=0
+	game.school.level=1
 	game._start_stage()
-	game.elapsed=0.5
-	await capture("school-crowd-compact")
-	game.player.x=game._stage_width()-110.0
+	game.player.x=game._note_position()
 	game._follow_camera(1.0)
-	game.elapsed=1.8
-	await capture("school-crowd-scroll-compact")
+	game._update_hud()
+	await capture("classroom-compact")
+	game.school.level=2
+	game._start_stage()
+	game.player.x=game._stage_width()*0.27
+	game.elapsed=0.60
+	game._follow_camera(1.0)
+	game._update_hud()
+	await capture("walk-home-crossing-compact")
+	game.player.x=game._stage_width()*School.BUS_STOP-60
+	game._follow_camera(1.0)
+	await capture("walk-home-stop-compact")
 	root.size=Vector2i(1100,700)
 	await process_frame
 	game._resize()
+	game.school.level=1
 	game._start_stage()
-	game.elapsed=0.7
-	await capture("school-crowd-landscape")
+	game.player.x=game._note_position()
+	game._follow_camera(1.0)
+	game._update_hud()
+	await capture("classroom-landscape")
 	game.stage=1
 	game._start_stage()
 	game.invincible=0
@@ -139,6 +166,11 @@ func run() -> void:
 	game._impact(game.boss_position()+Vector2(-35,-67),"POW!")
 	game.boss_flash=0.1
 	await capture("impact-landscape")
+	if had_save:
+		var save := FileAccess.open(save_path,FileAccess.WRITE)
+		save.store_buffer(saved_bytes)
+	else:
+		DirAccess.remove_absolute(save_path)
 	game.queue_free()
 	await process_frame
 	quit()

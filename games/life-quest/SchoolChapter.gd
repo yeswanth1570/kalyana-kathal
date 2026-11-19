@@ -1,86 +1,90 @@
 extends RefCounted
 
-const TITLES := ["Before the Bell", "The Report Card", "The Side Gate"]
-const TIMES := [28.0, 44.0, 42.0]
-const EXTRA_WIDTH := [168.0, 260.0, 560.0]
-const NOTEBOOKS := ["RED", "BLUE", "GOLD"]
-const WIN_LINES := [
-	"You made it to class before the bell. Why were you in the corridor?",
-	"Three notebooks, three desks. How will you keep up with your own assignments?",
-	"You got to the gate without disturbing class. What if Sharmila doesn’t want the note?"
-]
-const FAIL_LINES := [
-	"Stop there, Murugan. Where should you be, and how will you put this right?",
-	"We haven’t finished the notebook round. What went wrong, and how will you fix it?",
-	"I need to know why you’re out here. What will you do differently, and what if she says no?"
-]
-const GOOD_REPLIES := [
-	"I wanted to say hello to Sharmila. I’ll check in and wait until class is over.",
-	"I’ll return each book to its matching desk, then make time for my own work.",
-	"I’ll ask if she wants the note. If she says no, I’ll leave her be."
-]
-const REPAIR_REPLIES := [
-	"I left class without checking in. I’ll report at the office first.",
-	"I rushed the round. I’ll check the cover and return the missing book.",
-	"I tried to slip out. I’ll take the supervised route and respect her answer."
-]
+enum Level { CORRIDOR, CLASSROOM, WALK_HOME }
+enum Gaze { WRITING, TURNING_TO_CLASS, WATCHING, TURNING_TO_BOARD }
+
+const TITLES := ["Before the Bell", "The Last Bench", "The Walk Home"]
+const TIMES := [28.0, 52.0, 0.0]
+const BENCHES := [0.15, 0.35, 0.55, 0.75]
+const TEACHER_X := 0.89
+const BUS_STOP := 0.89
+const CROSSINGS := [0.31, 0.66]
+const STALL := 0.48
+const BIKE_PERIOD := 4.8
+const BIKE_TRAVEL := 1.25
 const PROMPTS := [
-	"Get to the classroom door on the right. Tap DUCK, then move between hiding spots.",
-	"Return Red, Blue, then Gold notebooks to matching desks. Use PLACE or E near a desk.",
-	"Carry the note to the side gate. Use the pencil to turn Sundaram’s gaze before crossing."
+	"Tap Duck and slip between carts when Sundaram turns. Reach the classroom door.",
+	"Move while Ms. Revathi writes. Duck behind a desk when she turns. Offer the note at the front bench.",
+	"Watch for bicycles at the two crossings. Meet Sharmila at the bus stop."
 ]
-const REPAIRS := [
-	"Check in at the office desk.",
-	"Return the replacement notebook to the blue desk.",
-	"Check in with the gate attendant and wait until class ends."
+const INTRO := [
+	"Across the corridor, Sharmila laughs as a page slips from her notebook. Murugan catches it. Before he can say a word, Sundaram’s whistle cuts through the hall.",
+	"Ms. Revathi starts the lesson. Murugan folds a note under the last bench. Sharmila is three rows ahead, and Revathi can turn from the board at any moment.",
+	"School is out. Sharmila waves from the corner. “See you at the bus stop!” Murugan takes the familiar street past the tea stall."
 ]
+const HOME_LINES := {
+	"talk":"“I read your note. We have a minute before the bus. Tell me how you wrote it during maths.”",
+	"later":"“Let me read it properly when I get home,” Sharmila says. “I’ll see you tomorrow.”",
+	"friends":"“Friends first, okay?” Sharmila says. Murugan smiles. “Okay.”"
+}
 
 var level := 0
 var checkpoint := 0
 var unlocked := 0
 var honor_pass := false
-var grade_available := false
-var repair_pending := false
-var placed := 0
-var pencil := false
-var pencil_picked := false
-var pencil_origin := 0.0
-var pencil_x := 0.0
-var pencil_unseen := false
-var pencil_time := 0.0
-var listen_time := 0.0
+var supervised := false
+var meeting_pending := false
+var meeting_resolution := ""
 var turn_face := 1.0
+var concern_peak := 0.0
+var note_time := 0.0
+var stumble := 0.0
+var stumble_face := 1.0
+var ending := "friends"
 var outcome := ""
 var reason := ""
 var concerns_met: Array[String] = []
 var turns := 0
 
 func reset_attempt() -> void:
-	placed = 0
-	grade_available = false
-	pencil = false
-	pencil_picked = false
-	pencil_time = 0.0
-	listen_time = 0.0
+	concern_peak = 0.0
+	note_time = 0.0
+	stumble = 0.0
+	ending = "friends"
 	outcome = ""
 	reason = ""
 	concerns_met.clear()
 	turns = 0
 
+func teacher() -> String:
+	return "Ms. Revathi" if level == Level.CLASSROOM else "Sundaram"
+
+func actor() -> String:
+	if meeting_pending: return "%s & Amma" % teacher()
+	return "Sharmila" if level == Level.WALK_HOME else teacher()
+
 func opening() -> String:
-	return WIN_LINES[level] if outcome == "success" else FAIL_LINES[level]
+	if meeting_pending:
+		return "Amma pulls up a chair. %s asks what happened and what you’ll do differently on another try." % teacher()
+	match level:
+		Level.CORRIDOR: return "You made it to class. What brought you out into the corridor?"
+		Level.CLASSROOM: return "I saw the note after the lesson. What did you want to tell Sharmila?"
+		_: return "You made it! I have your note. What did you want to say before my bus comes?"
+
+func written_reply() -> String:
+	if meeting_pending:
+		return "I stepped out while you were watching. I’ll wait for a safe moment and follow your instructions."
+	if level == Level.CORRIDOR:
+		return "I came to return a page to Sharmila. I’ll wait until there’s time to talk."
+	return "I wanted to say hello. Sharmila can read it whenever she likes."
 
 func required_concerns() -> Array[String]:
-	var keys: Array[String] = []
-	if outcome == "success":
-		keys.append("purpose" if level != 2 else "choice")
-	else:
-		keys.assign(["ownership", "repair"])
-		if level == 2: keys.append("choice")
-	return keys
+	if meeting_pending: return ["ownership", "repair"]
+	return [] if level == Level.WALK_HOME else ["purpose"]
 
 func turn_limit() -> int:
-	return 2 if outcome == "success" else 4
+	if meeting_pending: return 4
+	return 1 if level == Level.WALK_HOME else 2
 
 func accept_reply(addressed: Array) -> String:
 	turns += 1
@@ -90,7 +94,19 @@ func accept_reply(addressed: Array) -> String:
 	for key in required_concerns():
 		if key not in concerns_met:
 			return "retry" if turns >= turn_limit() else ""
-	return "pass" if outcome == "success" else "conditional"
+	return "conditional" if meeting_pending else "pass"
 
 func context() -> Dictionary:
-	return {"level":level, "outcome":outcome, "reason":reason, "notebooks":placed, "honor_pass":honor_pass}
+	return {"protocol":3, "level":level, "outcome":outcome, "reason":reason, "honor_pass":honor_pass}
+
+func gaze(time: float) -> int:
+	var write := 6.0 if supervised else 4.0
+	var beat := fposmod(time,write+3.4)
+	if beat < write: return Gaze.WRITING
+	if beat < write+0.65: return Gaze.TURNING_TO_CLASS
+	if beat < write+2.75: return Gaze.WATCHING
+	return Gaze.TURNING_TO_BOARD
+
+static func bike_progress(index: int, time: float) -> float:
+	var beat := fposmod(time+float(index)*1.8,BIKE_PERIOD)
+	return beat/BIKE_TRAVEL

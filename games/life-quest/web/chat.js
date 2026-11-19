@@ -49,7 +49,7 @@ async function checkAvailability(){
 }
 function openConnection(){ $('qwen-url').value=endpoint;$('qwen-key').value=key;$('qwen-status').textContent='';connection.hidden=false }
 window.kalyanaChat={
- open(data){if(current&&current.id===data.id&&!section.hidden)return;abort?.abort();generation++;current=structuredClone(data);turns=data.turns||0;phaseGain=0;busy=false;$('chat-name').textContent=data.actor;$('chat-avatar').textContent=data.actor[0];$('chat-avatar').classList.toggle('sharmila',data.actor==='Sharmila');$('chat-reel').textContent=`ACT ${String(data.stage+1).padStart(2,'0')} / 05  ·  CONVERSATION ${data.phase+1} / 3`;$('chat-hint').textContent=data.hint;$('chat-messages').replaceChildren();for(const message of data.messages)bubble(message.role==='user'?'user':'assistant',message.content);$('chat-reel').textContent=data.school?'SCHOOL DEBRIEF  ·  '+(data.school.outcome==='success'?'MADE IT':'REPAIR NEEDED'):$('chat-reel').textContent;
+ open(data){if(current&&current.id===data.id&&!section.hidden)return;abort?.abort();generation++;current=structuredClone(data);turns=data.turns||0;phaseGain=0;busy=false;$('chat-name').textContent=data.actor;$('chat-avatar').textContent=data.actor[0];$('chat-avatar').classList.toggle('sharmila',data.actor==='Sharmila');$('chat-reel').textContent=`ACT ${String(data.stage+1).padStart(2,'0')} / 05  ·  CONVERSATION ${data.phase+1} / 3`;$('chat-hint').textContent=data.hint;$('chat-messages').replaceChildren();for(const message of data.messages)bubble(message.role==='user'?'user':'assistant',message.content);$('chat-reel').textContent=data.school?(data.school.reason==='caught'?'PARENT–TEACHER MEETING':data.school.reason==='bus_stop'?'THE WALK HOME  ·  BUS STOP':'SCHOOL DEBRIEF'):$('chat-reel').textContent;
  $('chat-return').hidden=!!data.school;
  $('chat-skip').textContent=data.school?'Use written response →':'Skip conversation · keep playing →';
  $('chat-return').textContent=data.chat_only?'Back to title →':'Back to the scene →';$('chat-input').value='';$('chat-status').textContent=endpoint&&key?'Your words. Their response. Take your time.':'Connect your PC to talk to the Qwen character.';trust();controls();section.hidden=false;document.getElementById('fullscreen').hidden=true;checkAvailability();},
@@ -85,7 +85,7 @@ $('chat-form').addEventListener('submit',async event=>{
  if(scene.school){
   trust();
   $('chat-input').value='';
-  $('chat-status').textContent='Sundaram · '+data.emotion;
+  $('chat-status').textContent=scene.actor+' · '+data.emotion;
   callback({...data,kind:'reply',user_text:text,id:scene.id});
   return;
  }

@@ -3,6 +3,7 @@ extends SceneTree
 var checks := 0
 var failed := 0
 var game: Node
+const School = preload("res://SchoolChapter.gd")
 const Story = preload("res://Stages.gd")
 
 func _initialize() -> void:
@@ -210,7 +211,8 @@ func run() -> void:
 	check(game.landing_pose>0,"Jump ends in a landing pose")
 	game.stage=0
 	game.school.level=0
-	game.school.repair_pending=false
+	game.school.meeting_pending=false
+	game.school.supervised=false
 	game.school.honor_pass=false
 	game._start_stage()
 	game._parry()
@@ -295,63 +297,92 @@ func run() -> void:
 	check(game.state=="school_result" and game.school.reason=="caught" and game.school.turn_limit()==4,"Capture opens a harder debrief immediately")
 	game._end_school("success","reached")
 	check(game.school.outcome=="failure","Duplicate terminal events cannot replace a captured result")
-	game._school_choice(false)
-	game._resolve_school("conditional")
-	check(game.state=="intro" and game.school.repair_pending,"Written repair earns a supervised checkpoint")
-	game._start_stage()
-	game.player.x=game._school_desks()[0]
-	game._school_interact()
-	check(game.school.level==1 and not game.school.repair_pending and game.state=="intro","Completing the repair unlocks the next scene")
-	game._start_stage()
-	game.player.x=game._school_desks()[1]
-	game._school_interact()
-	check(game.school.reason=="wrong_desk","Wrong notebook desk opens the failure debrief")
-	game._resolve_school("retry")
-	for i in range(3):
-		game.player.x=game._school_desks()[i]
-		game._school_interact()
-		if i==1:
-			game.player=game._activity_position()
-			game._use_activity()
-			check(game.school.honor_pass,"Two notebooks unlock the Honor Pass reward")
-	check(game.school.placed==3 and game.school.outcome=="success","Three correctly matched notebooks open a victory debrief")
-	game._school_choice(true)
-	game._resolve_school("pass")
-	check(game.school.level==2 and game.school.honor_pass,"Honor Pass carries into the finale")
-	game._start_stage()
-	game.player.x=game._stage_width()*.31
-	game._tick(.016)
-	check(game.school.pencil,"The player picks up a pencil")
-	game.master_x=game.player.x-150
-	game.master_facing=1
-	game._throw_pencil()
-	check(not game.school.pencil and game.awareness>=25,"An observed pencil throw is charged and raises suspicion")
-	game.player.x=game.master_x-160
-	game.facing=1
-	game.school.pencil=true
-	game._throw_pencil()
-	for i in range(22): game._tick(.016)
-	check(game.school.listen_time>1.5,"An unseen throw distracts Sundaram when it lands in view")
-	game.player.x=game._stage_width()-68
-	game.awareness=0
-	game._tick(.06)
-	check(game.state=="school_result" and game.school.turn_limit()==2 and game.camera_x>0,"A clean scroll-to-gate escape opens the easier debrief")
+	check(game.school.meeting_pending and game._agent_name().contains("Amma"),"A catch brings the parent and the responsible teacher into the meeting")
 	game.qwen.endpoint=""
 	game.qwen.access_code=""
 	game._open_school_chat()
-	check(game.state=="school_result" and game.school.outcome=="success","Unavailable Qwen keeps the required debrief playable with written responses")
-	game.state="dialogue"
-	game._apply_school_reply({"reply":"Why are you here?","addressed":["purpose","ownership"]})
-	check(game.school_resolution.is_empty(),"Extra or unrelated concern IDs cannot resolve Side Gate")
-	game._apply_school_reply({"reply":"Fair enough.","addressed":["choice"]})
-	check(game.school_resolution=="pass","Acknowledging refusal resolves a clean final debrief")
-	game._resolve_school("pass")
-	check(game.state=="school_ending" and game.unlocked>=1,"After class scene unlocks college")
+	check(game.state=="school_result","Offline meeting returns to written responses")
+	game._school_choice(false)
+	game._load_progress()
+	game._show_intro()
+	check(game.state=="school_result" and game.school_resolution=="conditional","Reload restores the resolved meeting")
+	game._resolve_school("conditional")
+	check(game.state=="intro" and game.school.supervised and game.school.level==0,"Owning the mistake earns a supervised retry of the same level")
+	game._load_progress()
+	check(game.school.supervised and not game.school.meeting_pending,"Reload preserves the supervised route")
 	game._start_stage()
-	game.elapsed=game.school.TIMES[2]
+	game.master_x=game._stage_width()-191.0
 	game._tick(.016)
-	check(game.state=="school_result" and game.school.reason=="bell","Timeout opens the failure debrief")
+	check(game.master_turn>3.0,"Supervision gives Sundaram a longer stop")
+	game.player.x=game._stage_width()-72.0
+	game._tick(.016)
+	game._school_choice(true)
+	game._resolve_school("pass")
+	check(game.school.level==1 and not game.school.supervised and game.state=="intro","Clearing the corridor advances to class")
+
 	game._start_stage()
+	check(is_equal_approx(game.player.x,game._cover_positions()[0]),"Class starts at the last bench")
+	check(game.school.gaze(3.9)==School.Gaze.WRITING and game.school.gaze(4.2)==School.Gaze.TURNING_TO_CLASS and game.school.gaze(5.0)==School.Gaze.WATCHING and game.school.gaze(7.0)==School.Gaze.TURNING_TO_BOARD,"Revathi writes, turns, watches, then turns back")
+	game.school.supervised=true
+	check(game.school.gaze(5.9)==School.Gaze.WRITING,"Supervision adds two seconds to the writing window")
+	game.school.supervised=false
+	game.elapsed=4.9
+	game.held["sneak"]=true
+	game._tick(.016)
+	check(game.hidden_in_cover and game.awareness==0,"A desk shields a crouching player while Revathi watches")
+	game.player.x=(game._cover_positions()[0]+game._cover_positions()[1])*0.5
+	game._tick(.016)
+	check(not game.hidden_in_cover and game.awareness>0,"A crouched player in the aisle can still be seen")
+	game.player.x=game._note_position()
+	game._school_interact()
+	check(game.school.note_time==0.0 and not game.school_action_button.visible,"Revathi watching blocks the note action")
+	game.awareness=99
+	game.held.clear()
+	game._tick(.025)
+	check(game.school.meeting_pending and game._agent_name().contains("Revathi"),"Classroom catch opens Revathi’s meeting")
+	game.state="dialogue"
+	game._apply_school_reply({"school_protocol":3,"reply":"What happened?","addressed":["choice"]})
+	check(game.school_resolution.is_empty(),"Unrelated concerns cannot change the retry route")
+	for i in range(3):
+		game._apply_school_reply({"school_protocol":3,"reply":"Try the scene again.","addressed":[]})
+	check(game.school_resolution=="retry","Four unresolved replies lead to a normal retry")
+	game._resolve_school("retry")
+	check(game.school.level==1 and not game.school.supervised and game.state=="playing","Normal retry stays in the classroom")
+	game.state="playing"
+	game.elapsed=School.TIMES[1]
+	game._tick(.016)
+	check(game.school.reason=="bell" and not game.school.meeting_pending,"A timeout offers a direct retry")
+	game._resolve_school("retry")
+
+	game.held["right"]=true
+	var classroom_frames := 0
+	while game.state=="playing" and classroom_frames<420:
+		classroom_frames+=1
+		game._tick(1.0/60)
+		if game._can_offer_note(): game._school_interact()
+	check(game.school.reason=="note_delivered" and game.school.honor_pass,"A clean timed run reaches the first bench, passes the note, and earns the Honor Pass")
+	game._school_choice(true)
+	game._resolve_school("pass")
+	check(game.school.level==2 and game.school.honor_pass,"Honor Pass carries into the finale")
+
+	game._start_stage()
+	check(not game.resistance_bar.visible and not game.control_rects.has("sneak"),"The street has no awareness meter or crouch input")
+	game.elapsed=School.BIKE_TRAVEL*0.48
+	var crossing: float = game._stage_width()*School.CROSSINGS[0]
+	game.player.x=crossing
+	game._tick(.016)
+	check(game.school.stumble>0.0 and game.player.x<crossing-42.0 and game.state=="playing","A bicycle causes a recoverable stumble")
+	game.elapsed=School.BIKE_PERIOD*20+2.0
+	game.player.x=game._stage_width()*School.BUS_STOP
+	for i in range(41): game._tick(.016)
+	check(game.state=="school_result" and game.school.reason=="bus_stop","Walk home can end after a long delay")
+	game._open_school_chat()
+	check(game.state=="school_result","Offline Sharmila leaves written endings available")
+	game.state="dialogue"
+	game._apply_school_reply({"school_protocol":3,"reply":"Talk tomorrow?","addressed":[],"ending":"later"})
+	check(game.school_resolution=="pass" and game.school.ending=="later","A valid Sharmila ending passes without a score gate")
+	game._resolve_school("pass")
+	check(game.state=="school_ending" and game.unlocked>=1,"Meeting at the bus stop unlocks college")
 	game.stage=1
 	game.auto_fire=false
 	game._start_stage()
@@ -368,7 +399,8 @@ func run() -> void:
 	check(game.shots.size()==1,"Rapid taps respect throw cooldown")
 	game.stage=0
 	game.school.level=0
-	game.school.repair_pending=false
+	game.school.meeting_pending=false
+	game.school.supervised=false
 	game._start_stage()
 	var stealth_frames := 0
 	game.held["right"]=true
@@ -377,6 +409,21 @@ func run() -> void:
 		stealth_frames+=1
 		game._tick(1.0/60)
 	check(game.state=="school_result" and game.school.outcome=="success","Before the Bell can be cleared with real patrol movement")
+	game.school.level=School.Level.WALK_HOME
+	game._start_stage()
+	game.held["right"]=true
+	for frame in range(1800):
+		if game.state!="playing": break
+		game._tick(1.0/60)
+	check(game.state=="school_result" and game.school.reason=="bus_stop","The full street is passable after recovering from bicycle crossings")
+	var legacy := ConfigFile.new()
+	legacy.set_value("school","unlocked",2)
+	legacy.set_value("school","checkpoint",1)
+	legacy.set_value("school","repair",true)
+	legacy.set_value("school","honor_pass",true)
+	legacy.save(save_path)
+	game._load_progress()
+	check(game.school.level==School.Level.CLASSROOM and game.school.supervised and game.school.honor_pass and not game.school.meeting_pending,"Old repair and Honor Pass carry into the new classroom")
 	game.qwen.cancel()
 	if had_save:
 		var file := FileAccess.open(save_path,FileAccess.WRITE)

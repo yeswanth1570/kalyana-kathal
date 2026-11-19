@@ -1,5 +1,6 @@
 extends SceneTree
 const SchoolArt = preload("res://SchoolArt.gd")
+const SchoolScenes = preload("res://SchoolScenes.gd")
 var failed := 0
 var checks := 0
 func check(ok: bool, message: String) -> void:
@@ -27,6 +28,10 @@ func _initialize() -> void:
 	_check_school_atlas("School crouch transitions",SchoolArt.REACTIONS,SchoolArt.TRANSITION_FRAMES,3)
 	_check_school_atlas("School expressions",SchoolArt.REACTIONS,SchoolArt.HEAD_FRAMES,4)
 	_check_school_atlas("School background students",SchoolArt.STUDENTS,SchoolArt.STUDENTS_FRAMES,12)
+	_check_school_atlas("Classroom cast",SchoolScenes.CAST,SchoolScenes.CAST_FRAMES,6)
+	_check_school_atlas("Street sprites",SchoolScenes.STREET,SchoolScenes.STREET_FRAMES,3)
+	for texture in [SchoolScenes.CLASSROOM,SchoolScenes.HOME]:
+		check(texture.get_width()>=1600 and texture.get_height()>=900,"New school backdrop has full resolution")
 	print("ART RESULT: %d checks, %d failures"%[checks,failed])
 	quit(1 if failed else 0)
 

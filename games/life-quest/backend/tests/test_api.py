@@ -50,6 +50,38 @@ class API(unittest.TestCase):
             self.assertEqual(self.request(path='/api/school', body=body)[0], 502)
         self.assertEqual(self.request(path='/pilot/submit', body=body)[0], 404)
 
+    def test_revised_classroom_and_meeting_choose_the_correct_personas(self):
+        body = {'school': {'protocol': 3, 'level': 1, 'outcome': 'success', 'reason': 'note_delivered'}, 'text': 'I wanted to return a page.'}
+        with patch.object(server, 'request_model', return_value={
+            'reply': 'I see.', 'emotion': 'curious', 'marks': {'purpose': True},
+        }) as ask:
+            status, answer, _ = self.request(path='/api/school', body=body)
+        self.assertEqual(status, 200)
+        self.assertEqual(answer['school_protocol'], 3)
+        self.assertEqual(answer['addressed'], ['purpose'])
+        self.assertIn('Ms. Revathi', ask.call_args.args[0][0]['content'])
+        body['school'].update(outcome='failure', reason='caught')
+        messages, checks = server.school_prompt(body)
+        self.assertIn('Revathi', messages[0]['content'])
+        self.assertIn('Amma', messages[0]['content'])
+        self.assertEqual(checks, ['ownership', 'repair'])
+
+    def test_revised_walk_home_requires_a_supported_sharmila_ending(self):
+        body = {'school': {'protocol': 3, 'level': 2, 'outcome': 'success', 'reason': 'bus_stop'}, 'text': 'Read it whenever you like.'}
+        reply = {'reply': 'I’ll read your note later.', 'emotion': 'warm', 'marks': {}, 'ending': 'later'}
+        with patch.object(server, 'request_model', return_value=reply) as ask:
+            status, answer, _ = self.request(path='/api/school', body=body)
+        self.assertEqual(status, 200)
+        self.assertEqual(answer['ending'], 'later')
+        self.assertIn('Sharmila', ask.call_args.args[0][0]['content'])
+        self.assertEqual(set(ask.call_args.args[1]['properties']['ending']['enum']), {'talk', 'later', 'friends'})
+        with patch.object(server, 'request_model', return_value={**reply, 'ending': 'unlock_everything'}):
+            self.assertEqual(self.request(path='/api/school', body=body)[0], 502)
+
+    def test_revised_protocol_rejects_a_legacy_result(self):
+        body = {'school': {'protocol': 3, 'level': 1, 'outcome': 'success', 'reason': 'notebooks'}, 'text': 'I returned the books.'}
+        self.assertEqual(self.request(path='/api/school', body=body)[0], 400)
+
     def test_no_research_api(self):self.assertEqual(self.request(path='/api/runs')[0],404)
     def test_unknown_act(self):
         data=self.valid();data['stage']=99;self.assertEqual(self.request(body=data)[0],400)

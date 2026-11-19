@@ -1,6 +1,7 @@
 extends Node2D
 
 const School = preload("res://SchoolChapter.gd")
+const SchoolScenes = preload("res://SchoolScenes.gd")
 const Story = preload("res://Stages.gd")
 const DISPLAY_FONT: Font = preload("res://fonts/CinzelDecorative-Bold.ttf")
 const COVER: Texture2D = preload("res://art/cover-v2.png")
@@ -21,7 +22,6 @@ const SAVE := "user://school-preview.cfg"
 const LEGACY_SAVE := "user://life-quest.cfg"
 const THRESHOLDS := [70.0, 40.0, 12.0]
 const ACTIVITIES := {
-	0: {"name":"GRADE DESK", "action":"Collect grades", "reward":"Honor pass · slower detection"},
 	1: {"name":"GYM BENCH", "action":"Train", "reward":"Gym strength · faster dash recovery"},
 	3: {"name":"BARBER CHAIR", "action":"Get a haircut", "reward":"Fresh cut · +40 charm"}
 }
@@ -200,7 +200,16 @@ func _load_progress() -> void:
 		school.checkpoint = clampi(int(cfg.get_value("school", "checkpoint", 0)),0,school.unlocked)
 		school.level = school.checkpoint
 		school.honor_pass = bool(cfg.get_value("school", "honor_pass", false))
-		school.repair_pending = bool(cfg.get_value("school", "repair", false))
+		school.supervised = school.checkpoint < School.Level.WALK_HOME and bool(cfg.get_value("school", "supervised", cfg.get_value("school", "repair", false)))
+		school.meeting_pending = school.checkpoint < School.Level.WALK_HOME and bool(cfg.get_value("school", "meeting", false))
+		if school.meeting_pending:
+			var saved_decision = cfg.get_value("school","meeting_resolution","")
+			school.meeting_resolution = saved_decision if saved_decision in ["conditional","retry"] else ""
+			school.turns = clampi(int(cfg.get_value("school","meeting_turns",0)),0,school.turn_limit())
+			var saved_concerns = cfg.get_value("school","meeting_concerns",[])
+			if saved_concerns is Array:
+				for concern in school.required_concerns():
+					if concern in saved_concerns: school.concerns_met.append(concern)
 		gentle = bool(cfg.get_value("settings", "gentle", true))
 		sound_on = bool(cfg.get_value("settings", "sound", true))
 		reduce_motion = bool(cfg.get_value("settings", "reduce_motion", false))
@@ -213,7 +222,12 @@ func _save_progress() -> void:
 	cfg.set_value("school", "unlocked", school.unlocked)
 	cfg.set_value("school", "checkpoint", school.checkpoint)
 	cfg.set_value("school", "honor_pass", school.honor_pass)
-	cfg.set_value("school", "repair", school.repair_pending)
+	cfg.set_value("school", "supervised", school.supervised)
+	cfg.set_value("school", "meeting", school.meeting_pending)
+	if school.meeting_pending:
+		cfg.set_value("school", "meeting_resolution", school.meeting_resolution)
+		cfg.set_value("school", "meeting_turns", school.turns)
+		cfg.set_value("school", "meeting_concerns", school.concerns_met)
 	cfg.set_value("settings", "gentle", gentle)
 	cfg.set_value("settings", "sound", sound_on)
 	cfg.set_value("settings", "reduce_motion", reduce_motion)
@@ -230,7 +244,10 @@ func boss_position() -> Vector2:
 	return Vector2(master_x if stage == 0 else viewport_size.x - 150, floor_y())
 
 func _stage_width() -> float:
-	return viewport_size.x + school.EXTRA_WIDTH[school.level] if stage == 0 else viewport_size.x
+	if stage != 0: return viewport_size.x
+	if school.level == School.Level.CORRIDOR: return viewport_size.x+168.0
+	var art := SchoolScenes.background(school.level).get_size()
+	return maxf(viewport_size.x+440.0,(floor_y()-200.0)*art.x/(art.y*0.80))
 
 func _follow_camera(dt: float) -> void:
 	if stage != 0:
@@ -241,9 +258,12 @@ func _follow_camera(dt: float) -> void:
 
 func _resize() -> void:
 	var old_floor := floor_y()
+	var scene_position := player.x/maxf(1.0,_stage_width())
 	viewport_size = get_viewport_rect().size
 	portrait = viewport_size.y > viewport_size.x
 	ui_scale = 2.0 if portrait else 1.0
+	if stage == 0 and school.level != School.Level.CORRIDOR:
+		player.x = scene_position*_stage_width()
 	player.x = clampf(player.x, 48, _stage_width() - (55 if stage == 0 else 295))
 	master_x = clampf(master_x, viewport_size.x * 0.40, _stage_width() - 220)
 	camera_x = clampf(player.x - viewport_size.x * 0.44,0.0,_stage_width()-viewport_size.x) if stage == 0 else 0.0
@@ -454,47 +474,48 @@ func _show_school_map() -> void:
 	_label(col,"SCHOOL  /  1999",16,GOLD)
 	_label(col,"The Folded Note",38)
 	for i in range(3):
-		var marker := "  •  Repair pending" if school.repair_pending and i == school.checkpoint else ""
+		var marker := ""
+		if i == school.checkpoint:
+			if school.meeting_pending: marker = "  •  Meeting"
+			elif school.supervised: marker = "  •  Supervised retry"
 		var button := _button(col, "%d   %s%s" % [i+1,school.TITLES[i],marker],_select_school_level.bind(i),i==school.checkpoint)
 		button.disabled = i > school.unlocked
 	_button(col,"<  All chapters",_show_map)
 
 func _select_school_level(index: int) -> void:
 	if index != school.checkpoint:
-		school.repair_pending = false
-	if index == 0 and not school.repair_pending:
-		school.honor_pass = false
+		school.meeting_pending = false
+		school.meeting_resolution = ""
+		school.supervised = false
 	school.level = index
 	school.checkpoint = index
 	_save_progress()
 	_show_intro()
 
 func _show_intro() -> void:
+	if stage == 0 and school.meeting_pending:
+		school.outcome = "failure"
+		school.reason = "caught"
+		school_resolution = school.meeting_resolution
+		_show_school_result()
+		return
 	state = "intro"
 	var col := _modal()
 	if stage == 0:
 		_label(col,"THE FOLDED NOTE  /  SCENE %d OF 3" % (school.level+1),16,GOLD)
 		_label(col,school.TITLES[school.level],37)
-		if school.repair_pending:
-			_label(col,school.REPAIRS[school.level],22)
-		else:
-			var scenes := [
-				"The morning bell rings. Across the corridor, Sharmila laughs as a loose page escapes her notebook. Murugan catches it. Before he can say a word, Sundaram’s whistle cuts through the hall.",
-				"Murugan can earn a chance to speak after class. Sundaram leaves him three notebooks and a simple instruction: check the cover before you put one down.",
-				"At last, the side gate. Murugan folds a new note, takes a breath, and waits for Sundaram to turn."
-			]
-			if school.level == 0:
-				var still := TextureRect.new()
-				still.texture = SCHOOL_OPENING
-				still.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-				still.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-				still.custom_minimum_size.y = 372.0 if portrait else 152.0
-				col.add_child(still)
-				if not reduce_motion:
-					still.modulate.a = 0.0
-					still.create_tween().tween_property(still,"modulate:a",1.0,0.35)
-			_label(col,scenes[school.level],22)
-			_label(col,school.PROMPTS[school.level],18,Color("b9d0ba"))
+		var still := TextureRect.new()
+		still.texture = SCHOOL_OPENING if school.level == School.Level.CORRIDOR else SchoolScenes.background(school.level)
+		still.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		still.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		still.custom_minimum_size.y = 330.0 if portrait else 145.0
+		col.add_child(still)
+		if not reduce_motion:
+			still.modulate.a = 0.0
+			still.create_tween().tween_property(still,"modulate:a",1.0,0.35)
+		_label(col,school.INTRO[school.level],22)
+		_label(col,school.PROMPTS[school.level],18,Color("b9d0ba"))
+		if school.supervised: _label(col,"Supervised retry • More time between looks",17,GOLD)
 		_button(col,"Action!  >",_start_stage,true).grab_focus()
 		_button(col,"<  School scenes",_show_school_map)
 		return
@@ -531,6 +552,7 @@ func _start_stage() -> void:
 		school_breeze = 0.0
 		school_breeze_triggered = false
 		school_has_spoken = false
+		chat_messages.clear()
 		chat_error = ""
 		response = ""
 	phase = 0
@@ -540,6 +562,8 @@ func _start_stage() -> void:
 	approval = 20
 	charm = 0
 	player = Vector2(112 if stage == 0 else 160, floor_y())
+	if stage == 0 and school.level == School.Level.CLASSROOM:
+		player.x = _stage_width()*float(School.BENCHES[0])
 	velocity = Vector2.ZERO
 	facing = 1
 	shot_clock = 0
@@ -642,11 +666,11 @@ func _make_hud() -> void:
 		heal_button.hide()
 		talk_button.hide()
 		charm_bar.hide()
-		boss_label.text = "SUNDARAM’S AWARENESS"
 		_school_control_layout(y,h)
-	if stage == 0:
-		school_action_button = _button(tools,"Place notebook [E]",_school_interact)
+	if stage == 0 and school.level == School.Level.CLASSROOM:
+		school_action_button = _button(hud,"Offer Note [E]",_school_interact,true)
 		_compact_button(school_action_button)
+		school_action_button.position = Vector2(viewport_size.x-204*ui_scale,y-62*ui_scale)
 		school_action_button.focus_mode = Control.FOCUS_NONE
 		school_action_button.hide()
 	if ACTIVITIES.has(stage):
@@ -665,8 +689,8 @@ func _school_control_layout(y: float, height: float) -> void:
 		"left":Rect2(22,y,left_button,height),
 		"right":Rect2(22+left_button+gap,y,left_button,height),
 	}
-	if school.repair_pending: return
-	var actions: Array = ["dash","sneak"] if school.level==0 else ["dash","pencil","sneak"]
+	var actions: Array = ["dash","sneak"] if school.level == School.Level.CORRIDOR else ["sneak"]
+	if school.level == School.Level.WALK_HOME: return
 	var group_width := minf(width-44.0-move_width-40.0, 560.0)
 	var button_width := (group_width-gap*(actions.size()-1))/float(actions.size())
 	var start_x := width-22.0-group_width
@@ -674,20 +698,14 @@ func _school_control_layout(y: float, height: float) -> void:
 		control_rects[actions[i]] = Rect2(start_x+i*(button_width+gap),y,button_width,height)
 
 func _activity_position() -> Vector2:
-	var x := _cover_positions()[1] if stage == 0 else viewport_size.x * 0.46
-	return Vector2(x,floor_y())
+	return Vector2(viewport_size.x*0.46,floor_y())
 
 func _near_activity() -> bool:
-	if stage == 0 and (school.level != 1 or not school.grade_available or school.honor_pass or school.repair_pending):
-		return false
 	return state == "playing" and ACTIVITIES.has(stage) and not activity_claimed and player.distance_to(_activity_position()) <= 92.0
 
 func _use_activity() -> void:
 	if not _near_activity(): return
 	activity_claimed = true
-	if stage == 0:
-		school.honor_pass = true
-		_save_progress()
 	if stage == 1: dash_cooldown = minf(dash_cooldown,0.55)
 	if stage == 3: charm = minf(100.0,charm+40.0)
 	face_frame = 2
@@ -719,17 +737,24 @@ func _update_hud() -> void:
 	hp_label.text = "MURUGAN   ·   HP %d / %d" % [hp, max_hp]
 	if stage == 0:
 		var time_left := maxi(0,ceili(school.TIMES[school.level]-elapsed))
-		hp_label.text = "SCHOOL %d / 3   |   %ds" % [school.level+1,time_left]
-		if school.repair_pending: hp_label.text = "SCHOOL %d / 3   |   REPAIR" % (school.level+1)
+		var street := school.level == School.Level.WALK_HOME
+		hp_label.text = "SCHOOL %d / 3" % (school.level+1)
+		if not street: hp_label.text += "   |   %ds" % time_left
 		progress_label.text = school.TITLES[school.level] + ("   |   HONOR PASS" if school.honor_pass else "")
 		if is_instance_valid(school_action_button):
-			school_action_button.visible = school.level == 1 or school.repair_pending
-			school_action_button.disabled = _near_school_desk() < 0
-			school_action_button.text = "Check in [E]" if school.repair_pending else "Place %s [%s]" % [school.NOTEBOOKS[mini(school.placed,2)],"E"]
+			school_action_button.visible = _can_offer_note()
+		boss_label.visible = not street
+		resistance_bar.visible = not street
+		boss_label.text = "SUNDARAM’S AWARENESS" if school.level == School.Level.CORRIDOR else _classroom_cue()
 		resistance_bar.value = awareness
 		resistance_bar.add_theme_stylebox_override("fill", _style(ROSE if awareness > 60 else GOLD, GOLD, 4))
 		status_label.text = "Hidden" if hidden_in_cover else ("Seen • Get behind cover" if awareness > 5 else ("Tap Duck to stand" if school_duck_latched else "Tap Duck to sneak"))
-		if school.repair_pending: status_label.text = school.REPAIRS[school.level]
+		if school.level == School.Level.CLASSROOM:
+			status_label.text = "Hidden behind a desk" if hidden_in_cover else "Move between desks while she writes"
+			if _can_offer_note(): status_label.text = "Sharmila is within reach"
+			if school.note_time > 0.0: status_label.text = "Sharmila takes the note"
+		elif street:
+			status_label.text = "Meet Sharmila at the bus stop"
 		if notice_time > 0: status_label.text = notice
 		return
 	progress_label.text = "ACT %02d / 05   %s   ·   TRUST %d/72   ·   TALK %d/3" % [stage+1, Story.ACTS[stage].place, approval, mini(phase+1,3)]
@@ -770,9 +795,13 @@ func _tick(dt: float) -> void:
 	if _held("left") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): axis -= 1
 	if _held("right") or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): axis += 1
 	if stage != 0 and axis != 0 and dash_time <= 0: facing = axis
-	school_ducking = stage == 0 and dash_time <= 0 and _sneaking()
+	school_ducking = stage == 0 and school.level != School.Level.WALK_HOME and dash_time <= 0 and _sneaking()
+	if stage == 0 and (school.stumble > 0.0 or school.note_time > 0.0): axis = 0.0
 	if stage == 0:
-		var target_speed := axis*(144.0 if school_ducking else 270.0)
+		var speed_limit := 144.0 if school_ducking else 270.0
+		if school.level == School.Level.WALK_HOME and absf(player.x-_stage_width()*School.STALL) < 90.0:
+			speed_limit = 155.0
+		var target_speed := axis*speed_limit
 		school_speed = move_toward(school_speed,target_speed,(3100.0 if axis == 0 else 2650.0)*dt)
 		school_duck_blend = move_toward(school_duck_blend,float(school_ducking),dt*(13.0 if reduce_motion else 6.8))
 		if dash_time <= 0 and absf(school_speed)>22.0: facing = signf(school_speed)
@@ -797,7 +826,10 @@ func _tick(dt: float) -> void:
 		school_moving = distance > 12.0*dt
 		if school_moving and dash_time <= 0.0:
 			school_step_phase = SchoolMotion.advance_step(school_step_phase,distance,school_ducking)
-		_tick_stealth(dt)
+		match school.level:
+			School.Level.CORRIDOR: _tick_stealth(dt)
+			School.Level.CLASSROOM: _tick_classroom(dt)
+			School.Level.WALK_HOME: _tick_walk_home(dt,old_x)
 		_follow_camera(dt)
 		_update_hud()
 		return
@@ -862,77 +894,19 @@ func _sneaking() -> bool:
 
 func _cover_positions() -> Array[float]:
 	var w := _stage_width()
-	if school.level == 1: return _school_desks()
-	if school.level == 0:
-		return [w*0.251,w*0.492,w*0.735]
-	return [w*0.22,w*0.44,w*0.62,w*0.79]
+	if school.level == School.Level.CLASSROOM:
+		var desks: Array[float] = []
+		for bench in School.BENCHES:
+			desks.append(w*bench)
+		return desks
+	return [w*0.251,w*0.492,w*0.735]
 
 func _school_cover_radius(index: int) -> float:
-	return SchoolArt.COVER_RADII[index] * (1.0 if portrait else 0.84)
+	if school.level == School.Level.CLASSROOM:
+		return 98.0 if portrait else 74.0
+	return SchoolArt.COVER_RADII[index]*(1.0 if portrait else 0.84)
 
-func _school_desks() -> Array[float]:
-	if school.repair_pending:
-		return [viewport_size.x*0.28]
-	return [_stage_width()*0.24,_stage_width()*0.49,_stage_width()*0.73]
-
-func _near_school_desk() -> int:
-	if stage != 0 or state != "playing" or (school.level != 1 and not school.repair_pending):
-		return -1
-	var desks := _school_desks()
-	for i in desks.size():
-		if absf(player.x-desks[i]) <= 72.0: return i
-	return -1
-
-func _school_interact() -> void:
-	var desk := _near_school_desk()
-	if desk < 0: return
-	if school.repair_pending:
-		_resolve_school("pass")
-	elif desk != school.placed:
-		_end_school("failure","wrong_desk")
-	else:
-		school.placed += 1
-		if school.placed >= 2: school.grade_available = true
-		_sound("parry")
-		_burst(player+Vector2(0,-42),GOLD,12)
-		if school.placed == 3: _end_school("success","notebooks")
-
-func _school_view_sees(x: float, sheltered: bool) -> bool:
-	var distance := x-master_x
-	var view_range: float = [250.0,285.0,320.0][school.level]
-	return not sheltered and (absf(distance) < 48.0 or (distance*master_facing > 0 and absf(distance) < view_range))
-
-func _throw_pencil() -> void:
-	if state != "playing" or stage != 0 or not school.pencil or school.repair_pending: return
-	school.pencil = false
-	school.pencil_unseen = hidden_in_cover
-	school.pencil_origin = player.x
-	school.pencil_x = clampf(player.x+facing*220.0,40.0,_stage_width()-45.0)
-	school.pencil_time = 0.34
-	attack_pose = 0.34
-	_sound("letter")
-	if _school_view_sees(player.x,hidden_in_cover):
-		awareness = minf(100.0,awareness+25.0)
-		school.pencil_unseen = false
-		notice = "He saw the throw! Find cover."
-		notice_time = 1.8
-	else:
-		# A hidden or off-angle throw can draw his attention when it lands.
-		school.pencil_unseen = true
-
-func _tick_stealth(dt: float) -> void:
-	if school.repair_pending:
-		return
-	school_whistle = maxf(0.0,school_whistle-dt)
-	school_bell_pulse = maxf(0.0,school_bell_pulse-dt)
-	school_breeze = maxf(0.0,school_breeze-dt)
-	if not school_breeze_triggered and player.x >= _cover_positions()[0]:
-		school_breeze_triggered = true
-		school_breeze = 3.4
-	if not school_last_bell and elapsed >= school.TIMES[school.level]-7.0:
-		school_last_bell = true
-		school_bell_pulse = 1.5
-		_sound("bell")
+func _update_cover() -> bool:
 	var was_hidden := hidden_in_cover
 	hidden_in_cover = false
 	if school_ducking:
@@ -941,52 +915,108 @@ func _tick_stealth(dt: float) -> void:
 			if absf(player.x-cover[i]) <= _school_cover_radius(i):
 				hidden_in_cover = true
 				break
-	var pickup_x := _stage_width()*0.31
-	if school.level > 0 and not school.pencil_picked and absf(player.x-pickup_x) < 42.0:
-		school.pencil_picked = true
-		school.pencil = true
-		notice = "Pencil ready • Tap PENCIL or Q"
-		notice_time = 2.0
-		_sound("parry")
-	if school.pencil_time > 0:
-		school.pencil_time = maxf(0.0,school.pencil_time-dt)
-		if school.pencil_time == 0 and school.pencil_unseen and _school_view_sees(school.pencil_x,false):
-			if school.pencil_x != master_x: master_facing = signf(school.pencil_x-master_x)
-			school.listen_time = 2.0
-			master_turn = 0.0
-			_impact(Vector2(school.pencil_x,floor_y()-35),"TIK!")
-	if school.listen_time > 0:
-		school.listen_time = maxf(0.0,school.listen_time-dt)
-	elif master_turn > 0:
+	return not was_hidden and hidden_in_cover
+
+func _note_position() -> float:
+	return _stage_width()*float(School.BENCHES[-1])
+
+func _can_offer_note() -> bool:
+	return stage == 0 and state == "playing" and school.level == School.Level.CLASSROOM and school.note_time == 0.0 and school.gaze(elapsed) == School.Gaze.WRITING and absf(player.x-_note_position()) <= 75.0
+
+func _school_interact() -> void:
+	if not _can_offer_note(): return
+	school.note_time = 0.46
+	school_speed = 0.0
+	facing = 1.0
+	_sound("letter")
+	_update_hud()
+
+func _classroom_cue() -> String:
+	match school.gaze(elapsed):
+		School.Gaze.WRITING: return "REVATHI • WRITING"
+		School.Gaze.WATCHING: return "REVATHI • WATCHING"
+		_: return "REVATHI • TURNING"
+
+func _tick_classroom(dt: float) -> void:
+	if school.note_time > 0.0:
+		school.note_time = maxf(0.0,school.note_time-dt)
+		if school.note_time == 0.0:
+			if school.concern_peak < 35.0 and not school.honor_pass:
+				school.honor_pass = true
+				_save_progress()
+			_end_school("success","note_delivered")
+		return
+	var entered_cover := _update_cover()
+	var watched := school.gaze(elapsed) != School.Gaze.WRITING and not hidden_in_cover
+	_update_school_awareness(dt,watched,64.0 if school_ducking else 92.0,entered_cover)
+	if awareness >= 100.0:
+		_end_school("failure","caught")
+	elif elapsed >= School.TIMES[School.Level.CLASSROOM]:
+		_end_school("failure","bell")
+
+func _tick_stealth(dt: float) -> void:
+	school_whistle = maxf(0.0,school_whistle-dt)
+	school_bell_pulse = maxf(0.0,school_bell_pulse-dt)
+	school_breeze = maxf(0.0,school_breeze-dt)
+	if not school_breeze_triggered and player.x >= _cover_positions()[0]:
+		school_breeze_triggered = true
+		school_breeze = 3.4
+	if not school_last_bell and elapsed >= School.TIMES[School.Level.CORRIDOR]-7.0:
+		school_last_bell = true
+		school_bell_pulse = 1.5
+		_sound("bell")
+
+	var entered_cover := _update_cover()
+	if master_turn > 0.0:
 		master_turn = maxf(0.0,master_turn-dt)
-		# Change the sight cone when his eyes actually turn, midway through the pivot.
 		if master_turn <= 0.60: master_facing = school.turn_face
 	else:
 		var bounds_left := _stage_width()*0.40
-		var bounds_right := _stage_width() - (255.0 if school.level == 2 else 190.0)
+		var bounds_right := _stage_width()-190.0
 		var previous_master_x := master_x
-		master_x += master_facing * (78.0+school.level*10.0) * dt
+		master_x = clampf(master_x+master_facing*78.0*dt,bounds_left,bounds_right)
 		if master_x >= bounds_right or master_x <= bounds_left:
-			master_x = clampf(master_x,bounds_left,bounds_right)
 			school.turn_face = -master_facing
-			master_turn = 1.2
+			master_turn = 3.2 if school.supervised else 1.2
 			school_whistle = 0.55
 			if absf(player.x-master_x) < viewport_size.x: _sound("whistle")
 		master_stride += absf(master_x-previous_master_x)
-	# Crouching below the cart occludes the student. In the open he is still visible.
-	var seen := _school_view_sees(player.x,hidden_in_cover) and (school.listen_time<=0 or absf(player.x-master_x)<48.0)
-	var previous := awareness
-	var rate := 22.0 if school_ducking else 62.0
-	if school.level == 2 and player.x > _stage_width()*0.72: rate *= 1.18
-	if school.honor_pass: rate *= 0.75
-	awareness = clampf(awareness+(rate if seen else -45.0)*dt,0.0,100.0)
-	_update_school_mood(dt,previous,not was_hidden and hidden_in_cover)
+	var distance := player.x-master_x
+	var seen := master_turn <= 1.2 and not hidden_in_cover and (absf(distance)<48.0 or (distance*master_facing>0.0 and absf(distance)<250.0))
+	_update_school_awareness(dt,seen,22.0 if school_ducking else 62.0,entered_cover)
 	if awareness >= 100.0:
 		_end_school("failure","caught")
-	elif school.level != 1 and player.x >= _stage_width()-76 and awareness < 70.0:
+	elif player.x >= _stage_width()-76 and awareness < 70.0:
 		_end_school("success","reached")
-	elif elapsed >= school.TIMES[school.level]:
+	elif elapsed >= School.TIMES[School.Level.CORRIDOR]:
 		_end_school("failure","bell")
+
+func _update_school_awareness(dt: float, seen: bool, rate: float, entered_cover: bool) -> void:
+	var previous := awareness
+	if school.honor_pass: rate *= 0.75
+	awareness = clampf(awareness+(rate if seen else -45.0)*dt,0.0,100.0)
+	school.concern_peak = maxf(school.concern_peak,awareness)
+	_update_school_mood(dt,previous,entered_cover)
+
+func _tick_walk_home(dt: float, old_x: float) -> void:
+	school.stumble = maxf(0.0,school.stumble-dt)
+	if school.stumble > 0.0: return
+	for i in School.CROSSINGS.size():
+		var crossing := _stage_width()*float(School.CROSSINGS[i])
+		var progress := School.bike_progress(i,elapsed)
+		if progress < 0.22 or progress > 0.80: continue
+		if maxf(player.x,old_x)<crossing-42.0 or minf(player.x,old_x)>crossing+42.0: continue
+		school.stumble = 0.62
+		school.stumble_face = facing
+		school_speed = 0.0
+		player.x = crossing-73.0 if old_x <= crossing else crossing+73.0
+		notice = "Whoa! Wait for the bicycle."
+		notice_time = 1.25
+		_impact(player+Vector2(0,-115),"WHOA!")
+		_sound("parry")
+		return
+	if player.x >= _stage_width()*School.BUS_STOP-45.0:
+		_end_school("success","bus_stop")
 
 func _update_school_mood(dt: float, previous_awareness: float, entered_cover: bool) -> void:
 	school_relief = maxf(0.0,school_relief-dt)
@@ -1001,6 +1031,10 @@ func _end_school(outcome: String, reason: String) -> void:
 	school.outcome = outcome
 	school.reason = reason
 	school_resolution = ""
+	if reason == "caught":
+		school.meeting_pending = true
+		school.meeting_resolution = ""
+		_save_progress()
 	camera_x = clampf(camera_x,0.0,_stage_width()-viewport_size.x)
 	_clear_input()
 	_sound("win" if outcome == "success" else "hit")
@@ -1009,42 +1043,88 @@ func _end_school(outcome: String, reason: String) -> void:
 func _show_school_result() -> void:
 	state = "school_result"
 	var col := _modal(850)
-	var success: bool = school.outcome == "success"
+	if school.reason == "bell":
+		_label(col,"THE BELL RANG",16,GOLD)
+		_label(col,"Class is starting",34)
+		_label(col,"Try again and watch for a safe opening.",22)
+		_button(col,"Retry scene",_resolve_school.bind("retry"),true).grab_focus()
+		_button(col,"School scenes",_show_school_map)
+		return
+
 	var header := _row(col)
+	_add_school_portrait(header)
+	_label(header,school.actor().to_upper(),16,GOLD)
+	var titles := {"reached":"You slipped past","note_delivered":"The note made it","bus_stop":"At the bus stop","caught":"Parent–teacher meeting"}
+	_label(col,titles.get(school.reason,"School debrief"),32)
+	_label(col,school.opening(),21)
+
+	if not school_resolution.is_empty():
+		if not response.is_empty(): _label(col,response,19)
+		if school_resolution == "conditional":
+			_label(col,"Supervised retry earned • More time to move",18,GOLD)
+		elif school_resolution == "retry":
+			_label(col,"Try the scene again at normal difficulty.",18,GOLD)
+		var label := "Continue" if school_resolution == "pass" else "Start supervised retry" if school_resolution == "conditional" else "Retry scene"
+		_button(col,label,_resolve_school.bind(school_resolution),true).grab_focus()
+		return
+
+	if school.meeting_pending:
+		_label(col,"Explain what happened and how you’ll put it right.  •  %d / 4 turns" % school.turns,16,Color("b9d0ba"))
+	elif school.reason == "note_delivered" and school.honor_pass:
+		_label(col,"Honor Pass • Slower detection",16,GOLD)
+	if not chat_error.is_empty(): _label(col,chat_error,16,GOLD)
+	var talk := _button(col,"Type a reply · Qwen",_open_school_chat,true)
+	talk.disabled = school.turns >= school.turn_limit()
+	if school.level == School.Level.WALK_HOME:
+		_school_written_button(col,"Do you have a minute?",_finish_home.bind("talk"))
+		_school_written_button(col,"Read it when you’re ready.",_finish_home.bind("later"))
+		_school_written_button(col,"Friends first sounds good.",_finish_home.bind("friends"))
+	else:
+		_school_written_button(col,school.written_reply(),_school_choice.bind(not school.meeting_pending))
+		_button(col,"Retry scene",_resolve_school.bind("retry"))
+	_button(col,"School scenes",_show_school_map)
+
+func _add_school_portrait(parent: Control) -> void:
+	if school.level == School.Level.CORRIDOR:
+		_school_portrait(parent,SchoolArt.MASTER,SchoolArt.MASTER_FRAMES[5])
+	elif school.level == School.Level.CLASSROOM:
+		_school_portrait(parent,SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[2])
+	else:
+		_school_portrait(parent,SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[4])
+	if school.meeting_pending:
+		_school_portrait(parent,SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[5])
+
+func _school_portrait(parent: Control, texture: Texture2D, pose: Rect2) -> void:
 	var portrait_art := TextureRect.new()
 	var face := AtlasTexture.new()
-	face.atlas = SchoolArt.MASTER
-	var pose: Rect2 = SchoolArt.MASTER_FRAMES[7 if success or not school_resolution.is_empty() else 5]
-	face.region = Rect2(pose.position+Vector2(pose.size.x*0.16,0.0),Vector2(pose.size.x*0.72,pose.size.y*0.40))
+	face.atlas = texture
+	face.region = Rect2(pose.position+Vector2(pose.size.x*0.12,0.0),Vector2(pose.size.x*0.76,pose.size.y*0.40))
 	portrait_art.texture = face
-	portrait_art.custom_minimum_size = Vector2.ONE*69.0*ui_scale
+	portrait_art.custom_minimum_size = Vector2.ONE*54.0*ui_scale
 	portrait_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	header.add_child(portrait_art)
-	_label(header,"PT MASTER SUNDARAM",16,GOLD)
-	var title: String = {"reached":"You slipped past", "notebooks":"All notebooks delivered", "caught":"Sundaram spotted you", "wrong_desk":"Wrong desk", "bell":"The bell rang"}.get(school.reason,"School debrief")
-	_label(col,title,32)
-	_label(col,school.opening(),21)
-	_label(col,("Receptive" if success else "Skeptical")+" • %d turns • %s" % [school.turn_limit(),"Honor pass earned" if school.honor_pass else ("Notebook count %d/3" % school.placed if school.level==1 else "Explain why you were here")],16,Color("b9d0ba"))
-	if not school_resolution.is_empty():
-		var resolved_text: String = {"pass":"Sundaram nods. You can go.", "conditional":school.REPAIRS[school.level], "retry":"Try the scene again and address his concern."}[school_resolution]
-		if not response.is_empty(): _label(col,response,19)
-		_label(col,resolved_text,18,GOLD)
-		_button(col,"Continue" if school_resolution!="retry" else "Retry scene",_resolve_school.bind(school_resolution),true).grab_focus()
-		return
-	if not chat_error.is_empty(): _label(col,chat_error,16,GOLD)
-	var talk := _button(col,"Talk to Sundaram",_open_school_chat,true)
-	talk.disabled = school.turns >= school.turn_limit()
-	var line: String = school.GOOD_REPLIES[school.level] if success else school.REPAIR_REPLIES[school.level]
-	var choice := _button(col,line,_school_choice.bind(success))
+	parent.add_child(portrait_art)
+
+func _school_written_button(parent: Control, line: String, callback: Callable) -> void:
+	var choice := _button(parent,line,callback)
 	choice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_button(col,"Retry scene",_resolve_school.bind("retry"))
 
 func _school_choice(success: bool) -> void:
 	if state != "school_result" or not school_resolution.is_empty(): return
 	response = ""
 	school_resolution = "pass" if success else "conditional"
+	_remember_school_decision()
 	_show_school_result()
+
+func _remember_school_decision() -> void:
+	if school.meeting_pending:
+		school.meeting_resolution = school_resolution
+		_save_progress()
+
+func _finish_home(ending: String) -> void:
+	if state != "school_result" or school.level != School.Level.WALK_HOME: return
+	school.ending = ending
+	_resolve_school("pass")
 
 func _open_school_chat() -> void:
 	if state != "school_result": return
@@ -1070,17 +1150,22 @@ func _school_chat_fallback() -> void:
 	_show_school_result()
 
 func _resolve_school(decision: String) -> void:
-	if state != "school_result" and not (state == "playing" and school.repair_pending): return
+	if state != "school_result": return
+	var was_meeting := school.meeting_pending
+	school.meeting_pending = false
+	school.meeting_resolution = ""
 	match decision:
 		"retry":
+			if was_meeting or school.reason == "bell": school.supervised = false
+			_save_progress()
 			_start_stage()
 		"conditional":
-			school.repair_pending = true
+			school.supervised = true
 			_save_progress()
 			_show_intro()
 		"pass":
-			school.repair_pending = false
-			if school.level == 2:
+			school.supervised = false
+			if school.level == School.Level.WALK_HOME:
 				unlocked = maxi(unlocked,1)
 				_save_progress()
 				_show_school_ending()
@@ -1094,10 +1179,11 @@ func _resolve_school(decision: String) -> void:
 func _show_school_ending() -> void:
 	state = "school_ending"
 	var col := _modal()
-	_label(col,"AFTER CLASS",16,GOLD)
-	_label(col,"A folded note",38)
-	_label(col,"“Would you like to read it?” Murugan asks. Sharmila takes the note, folds it into her notebook, and smiles.",23)
-	_label(col,"“Friends first, okay?” she says. “Okay,” he answers. The next bell rings, and this time they both head to class.",22)
+	_label(col,"AFTER SCHOOL",16,GOLD)
+	_label(col,"At the bus stop",38)
+	_school_portrait(col,SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[4])
+	_label(col,School.HOME_LINES[school.ending],23)
+	_label(col,"The bus pulls away. Murugan pockets the loose page and heads home.",20)
 	_button(col,"Continue to college",_select_act.bind(1),true)
 	_button(col,"All chapters",_show_map)
 
@@ -1154,7 +1240,7 @@ func _jump() -> void:
 		_burst(player, Color("d5c8a8"), 6)
 
 func _dash() -> void:
-	if state == "playing" and dash_cooldown <= 0:
+	if state == "playing" and dash_cooldown <= 0 and (stage != 0 or school.level == School.Level.CORRIDOR):
 		dash_time = 0.17 if stage==0 else 0.22
 		dash_cooldown = 0.55 if stage == 1 and activity_claimed else 1.0
 		invincible = maxf(invincible, 0.26)
@@ -1214,6 +1300,7 @@ func _open_dialogue() -> void:
 	if not OS.has_feature("web"): qwen.check_connection()
 
 func _agent_name() -> String:
+	if stage == 0 and not school.outcome.is_empty(): return school.actor()
 	return ["Sundaram", "Sharmila", "Karthik", "Amma & Appa", "Sharmila"][stage]
 
 func _show_dialogue() -> void:
@@ -1223,6 +1310,7 @@ func _show_dialogue() -> void:
 		var payload := {"id":dialogue_id,"actor":_agent_name(),"stage":stage,"phase":phase,"approval":approval,"messages":chat_messages,"turns":chat_turns,"hint":Story.ACTS[stage].hint,"chat_only":chat_only}
 		if stage == 0 and not school.outcome.is_empty():
 			payload["school"] = school.context()
+			payload["hint"] = school.opening()
 			payload["turn_limit"] = school.turn_limit()
 			payload["turns"] = school.turns
 		JavaScriptBridge.eval("window.kalyanaChat.open(%s)" % JSON.stringify(payload))
@@ -1307,14 +1395,21 @@ func _apply_school_reply(data: Dictionary) -> void:
 	if not school_resolution.is_empty(): return
 	chat_pending = false
 	var addressed = data.get("addressed",null)
-	if not addressed is Array:
+	if not addressed is Array or data.get("school_protocol") != 3:
 		_skip_dialogue("This Qwen server needs the school update.")
 		return
 	if not chat_draft.is_empty(): chat_messages.append({"role":"user","content":chat_draft})
 	response = str(data.get("reply",""))
 	chat_messages.append({"role":"assistant","content":response})
 	chat_draft = ""
+	if school.level == School.Level.WALK_HOME:
+		var ending: String = str(data.get("ending",""))
+		if not School.HOME_LINES.has(ending):
+			_skip_dialogue("Qwen returned an incomplete ending.")
+			return
+		school.ending = ending
 	school_resolution = school.accept_reply(addressed)
+	_remember_school_decision()
 	if not school_resolution.is_empty():
 		if OS.has_feature("web"): JavaScriptBridge.eval("window.kalyanaChat.hide()")
 		_show_school_result()
@@ -1529,7 +1624,7 @@ func _show_help() -> void:
 	_label(col,"A little action. A lot of heart.",36)
 	_label(col,"TOUCH  ·  Hold arrows to move. Tap JUMP, DASH or PARRY.\nHold LETTER to throw; auto letters are optional in Settings. Multiple fingers work together.",23)
 	_label(col,"KEYBOARD  ·  A/D or Left/Right move · SPACE jump · SHIFT dash\nJ/X fire · W/S or Up/Down aim · K parry · H heal · R speak\nESC/P pause · Type freely to talk to the Qwen character",21)
-	_label(col,"SCHOOL: tap DUCK to switch stance, or hold S on a keyboard. Crouch behind furniture to hide.\nPress Q or tap PENCIL to roll a collected pencil. E interacts with desks.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
+	_label(col,"SCHOOL: tap DUCK to switch stance, or hold S on a keyboard. Crouch behind furniture to hide. Use Offer Note or E at the front bench.\nOTHER ACTS: lower the shield to talk. Offline Qwen? Skip and play on.\nAt a marked stop, use the nearby button or press E.",23)
 	_label(col,"A short dash makes you invincible. A tiffin heals once per act.\nOn a phone, landscape gives you more room to dodge.",21,Color("b9cbb6"))
 	_button(col,"Got it  >",_settings_back,true).grab_focus()
 
@@ -1612,7 +1707,6 @@ func _action(action: String) -> void:
 		"jump": _jump()
 		"dash": _dash()
 		"parry": _parry()
-		"pencil": _throw_pencil()
 		"sneak":
 			if stage==0: school_duck_latched = not school_duck_latched
 
@@ -1634,9 +1728,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_SHIFT: _dash()
 			KEY_K: _parry()
 			KEY_E:
-				if stage == 0 and not _near_activity(): _school_interact()
+				if stage == 0: _school_interact()
 				else: _use_activity()
-			KEY_Q: _throw_pencil()
 			KEY_H: _heal()
 			KEY_R: _manual_talk()
 
@@ -1693,21 +1786,31 @@ func _draw() -> void:
 	_background()
 	var world_offset := wobble - Vector2(camera_x,0)
 	draw_set_transform(world_offset)
-	if stage == 0 and state == "playing": _draw_stealth_scene()
+	if stage == 0 and state in ["playing","paused","school_result","school_ending"]:
+		match school.level:
+			School.Level.CORRIDOR: _draw_stealth_scene()
+			School.Level.CLASSROOM: _draw_classroom()
+			School.Level.WALK_HOME: _draw_walk_home()
 	draw_set_transform(Vector2.ZERO)
 	if state != "title":
 		var animate := state == "playing" and (_held("left") or _held("right") or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_LEFT) or Input.is_physical_key_pressed(KEY_RIGHT))
 		var actor_scale := 1.55 if portrait else 1.0
 		_character(player+world_offset,"hero",actor_scale,animate)
 		var kind: String = ["teacher","senior","manager","father","aunty"][stage]
-		if stage != 0 or not school.repair_pending:
-			_character(boss_position()+world_offset,kind,actor_scale,stage == 0 and state == "playing" and master_turn <= 0 and school.listen_time <= 0)
+		if stage != 0 or school.level == School.Level.CORRIDOR:
+			_character(boss_position()+world_offset,kind,actor_scale,stage == 0 and state == "playing" and master_turn <= 0)
 		if stage == 3: _character(boss_position()+world_offset+Vector2(87,0),"aunty",actor_scale*0.85,false)
 		if stage == 1 or stage == 4:
 			_character(boss_position()+world_offset+Vector2(94,0),"sharmila",actor_scale*0.85,false)
 	draw_set_transform(world_offset)
-	if stage == 0 and state == "playing" and not school.repair_pending: _draw_cover_props()
-	if state == "playing" and ACTIVITIES.has(stage) and (stage != 0 or (school.level == 1 and school.grade_available)): _draw_activity()
+	if stage == 0 and school.level != School.Level.WALK_HOME and state in ["playing","paused","school_result"]:
+		_draw_cover_props()
+		if school.note_time > 0.0:
+			var t := 1.0-school.note_time/0.46
+			var origin := player+Vector2(34,-105)
+			var to := _sharmila_desk()-Vector2(0,155)
+			_envelope(origin.lerp(to,t)-Vector2(0,sin(t*PI)*42.0),GOLD,0.78)
+	if state == "playing" and ACTIVITIES.has(stage): _draw_activity()
 	if windup > 0 and state == "playing":
 		var cue := boss_position()+Vector2(0,-205* (1.3 if portrait else 1.0))
 		draw_circle(cue,24,GOLD)
@@ -1724,11 +1827,11 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 	if state == "playing":
 		if impact_time > 0: _draw_impact(world_offset)
-		if stage == 0 and not school.repair_pending:
+		if stage == 0 and school.level == School.Level.CORRIDOR:
 			var cue := boss_position()+world_offset+Vector2(0,-_school_actor_height(false)-27)
 			var word := ""
 			if awareness>=52: word = "!"
-			elif school.listen_time>0: word = "LISTENING"
+			elif master_turn>1.2: word = "WAITING"
 			elif master_turn>0: word = "TURNING"
 			if not word.is_empty():
 				var badge_size := Vector2(45,38) if word=="!" else Vector2(139,38)
@@ -1761,7 +1864,8 @@ func _background() -> void:
 		# The painting provides the scene; a gentle ink glaze gives menu text contrast.
 		draw_rect(Rect2(0,0,w,h),Color(0.015,0.065,0.055,0.12))
 		return
-	var texture: Texture2D = SCENERY[stage]
+	var new_school_scene := stage == 0 and school.level != School.Level.CORRIDOR
+	var texture: Texture2D = SchoolScenes.background(school.level) if new_school_scene else SCENERY[stage]
 	var size := texture.get_size()
 	var g := floor_y()
 	# Scenery travels more slowly than carts, actors and the gate.
@@ -1775,9 +1879,12 @@ func _background() -> void:
 	else:
 		x -= drift*clampf(player.x/maxf(1.0,w-295.0),0.0,1.0)
 	var point := Vector2(x,g-image_size.y*0.82)
+	if new_school_scene:
+		image_size = size*(_stage_width()/size.x)
+		point = Vector2(-camera_x,g-image_size.y*0.80)
 	draw_rect(Rect2(0,0,w,h),Color("283f34"))
 	draw_texture_rect(texture,Rect2(point,image_size),false)
-	if stage==0 and state=="playing" and not reduce_motion:
+	if stage==0 and school.level == School.Level.CORRIDOR and state=="playing" and not reduce_motion:
 		_draw_school_atmosphere(point,image_size)
 	# Atmospheric pools of light and an inked stage apron separate controls from art.
 	draw_rect(Rect2(0,h-(190 if portrait else 120),w,200),Color(0.035,0.10,0.085,0.70))
@@ -1921,15 +2028,15 @@ func _draw_school_actor(pos: Vector2, hero: bool) -> void:
 	var facing_visual := master_facing
 	var squash := Vector2.ONE
 	var turning := is_action and master_turn>0
-	var turn_progress := 1.0-master_turn/1.2
+	var turn_progress := 1.0-minf(master_turn,1.2)/1.2
 	var speaking := state in ["school_result","dialogue","school_ending"]
-	var frame := SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),school.listen_time>0,turning,turn_progress,awareness>=65,int(master_stride/11.5))
+	var frame := SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),false,turning,turn_progress,awareness>=65,int(master_stride/11.5))
 	if turning:
 		facing_visual = -school.turn_face if turn_progress < 0.5 else school.turn_face
 		if not reduce_motion: squash.x = 1.0-0.10*sin(clampf(turn_progress,0.0,1.0)*PI)
 	if speaking: facing_visual = -1
 	height *= float(SchoolArt.MASTER_HEIGHTS[frame])
-	if is_action and not reduce_motion and not turning and school.listen_time<=0:
+	if is_action and not reduce_motion and not turning:
 		squash.y *= 1.0+0.012*cos(master_stride*0.14)
 	var source := SchoolArt.MASTER_FRAMES[frame]
 	var size := source.size*(height/source.size.y)
@@ -1955,6 +2062,18 @@ func _draw_school_hero(pos: Vector2) -> void:
 		source = SchoolArt.HERO_FRAMES[7]
 		anchor = 0.38
 		reference_height = source.size.y/0.64
+	elif active and school.note_time > 0.0:
+		texture = SchoolArt.REACTIONS
+		var reach := 1 if school.note_time > 0.27 else 2
+		source = SchoolArt.TRANSITION_FRAMES[reach]
+		anchor = SchoolArt.TRANSITION_ANCHORS[reach]
+		reference_height = 431.0
+	elif active and school.stumble > 0.0:
+		texture = SchoolArt.RUN
+		source = SchoolArt.RUN_FRAMES[2]
+		anchor = SchoolArt.RUN_ANCHORS[2]
+		reference_height = 420.0
+		if not reduce_motion: lift = sin(school.stumble/0.62*PI)*19.0
 	elif transition >= 0:
 		texture = SchoolArt.REACTIONS
 		source = SchoolArt.TRANSITION_FRAMES[transition]
@@ -1984,7 +2103,8 @@ func _draw_school_hero(pos: Vector2) -> void:
 	var size := source.size*ratio
 	var dest := Vector2(-size.x*anchor,-size.y-lift)
 	_oval(pos+Vector2(0,2),Vector2(base_height*0.19,9.0 if portrait else 6.0),Color(0.15,0.08,0.05,0.34))
-	draw_set_transform(pos,0.0,Vector2(facing,1.0))
+	var tilt := sin(school.stumble/0.62*PI)*-0.30*school.stumble_face if active and school.stumble > 0.0 and not reduce_motion else 0.0
+	draw_set_transform(pos,tilt,Vector2(facing,1.0))
 	if head == Vector3.ZERO:
 		draw_texture_rect_region(texture,Rect2(dest,size),source)
 	else:
@@ -2026,40 +2146,92 @@ func _draw_activity() -> void:
 	_text(ACTIVITIES[stage].name,sign_center+Vector2(0,27),15,PAPER,true)
 
 func _draw_stealth_scene() -> void:
-	if school.level == 1 or school.repair_pending:
-		var names: Array = ["CHECK IN"] if school.repair_pending else ["RED DESK","BLUE DESK","GOLD DESK"]
-		var desks := _school_desks()
-		for i in desks.size():
-			var desk := Vector2(desks[i],floor_y())
-			var trim: Color = GOLD if school.repair_pending else [ROSE,Color("7abad2"),GOLD][i]
-			if school.repair_pending:
-				_draw_school_prop(desk,2,180.0 if portrait else 149.0,Color.WHITE)
-			var name_plate := desk+Vector2(0,-(172.0 if portrait else 148.0))
-			draw_style_box(_style(INK,trim,7),Rect2(name_plate-Vector2(77,21),Vector2(154,37)))
-			_text(names[i],name_plate+Vector2(0,4),17,PAPER,true)
-	if school.repair_pending: return
-	if school.level > 0 and not school.pencil_picked:
-		var pickup := Vector2(_stage_width()*0.31,floor_y()-34)
-		draw_circle(pickup,17,INK,true)
-		draw_line(pickup+Vector2(-9,9),pickup+Vector2(9,-9),GOLD,5,true)
-	if school.pencil_time > 0:
-		var t := 1.0-school.pencil_time/0.34
-		var p := Vector2(lerpf(school.pencil_origin,school.pencil_x,t),floor_y()-10.0-sin(t*PI)*48.0)
-		draw_line(p-Vector2(10,3),p+Vector2(10,3),GOLD,5,true)
 	var eye := boss_position()+Vector2(0,-_school_actor_height(false)*0.78)
-	var view: float = [250.0,285.0,320.0][school.level]
+	var view := 250.0
 	var color := Color(0.99,0.86,0.48,0.16) if awareness < 60 else Color(0.95,0.24,0.24,0.29)
 	var sight_edge := Vector2(eye.x+master_facing*view,floor_y()+1.0)
-	draw_colored_polygon(PackedVector2Array([eye,eye+Vector2(master_facing*view,-58),sight_edge]),color)
-	draw_line(eye,sight_edge,Color(0.96,0.79,0.40,0.55),2.5,true)
-	if school.level == 1: return
+	if master_turn <= 1.2:
+		draw_colored_polygon(PackedVector2Array([eye,eye+Vector2(master_facing*view,-58),sight_edge]),color)
+		draw_line(eye,sight_edge,Color(0.96,0.79,0.40,0.55),2.5,true)
 	var gate := Vector2(_stage_width()-60,floor_y())
 	draw_style_box(_style(Color("224c42"),GOLD,14),Rect2(gate+Vector2(-38,-175),Vector2(76,170)))
-	_text("EXIT",gate+Vector2(0,-133),19,PAPER,true)
+	_text("CLASS",gate+Vector2(0,-133),19,PAPER,true)
 	var arrow := gate + Vector2(0,-99)
 	draw_line(arrow+Vector2(-17,0), arrow+Vector2(17,0), GOLD, 4, true)
 	draw_polyline(PackedVector2Array([arrow+Vector2(4,-12), arrow+Vector2(17,0), arrow+Vector2(4,12)]), GOLD, 4, true)
 	if hidden_in_cover: _text("HIDDEN",player+Vector2(0,-185),20,GOLD,true)
+
+func _draw_classroom() -> void:
+	var w := _stage_width()
+	var g := floor_y()
+	var background_height := w*SchoolScenes.CLASSROOM.get_height()/SchoolScenes.CLASSROOM.get_width()
+	var board := Vector2(w*0.70,g-background_height*0.28)
+	_text("x + 2 = 7",board, int(background_height*0.043),Color("dfdfc0"),true)
+	_text("x = 5",board+Vector2(w*0.105,background_height*0.048),int(background_height*0.038),Color("dfdfc0"),true)
+	var gaze := school.gaze(elapsed)
+	var teacher := Vector2(w*School.TEACHER_X,g-(55.0 if portrait else 34.0))
+	var frame := SchoolScenes.teacher_frame(gaze)
+	_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[frame],teacher,_school_actor_height(false)*0.92)
+	if gaze == School.Gaze.WRITING and not reduce_motion:
+		var chalk := teacher-Vector2(-21,_school_actor_height(false)*0.73)
+		for i in range(4):
+			var t := fposmod(elapsed*2.4+i*0.24,1.0)
+			draw_circle(chalk+Vector2(t*18.0,t*36.0),2.0,Color(1,0.98,0.81,(1.0-t)*0.67))
+	var first := _sharmila_desk()
+	_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[3],first,_school_actor_height(true)*0.69)
+	if state == "playing":
+		var badge := teacher-Vector2(0,_school_actor_height(false)*0.92+30)
+		var cue: String = ["WRITING","TURNING","WATCHING","TURNING"][gaze]
+		var trim := GOLD if gaze == School.Gaze.WRITING else ROSE
+		draw_style_box(_style(INK,trim,10),Rect2(badge-Vector2(82,18),Vector2(164,36)))
+		_text(cue,badge+Vector2(0,6),18,PAPER,true)
+		if _can_offer_note(): _envelope(first-Vector2(0,_school_actor_height(true)*0.76),GOLD,0.75)
+
+func _sharmila_desk() -> Vector2:
+	return Vector2(_note_position()+(94.0 if portrait else 75.0),floor_y()-15.0)
+
+func _draw_walk_home() -> void:
+	var w := _stage_width()
+	var g := floor_y()
+	var hero_height := _school_actor_height(true)
+	var stall := Vector2(w*School.STALL,g-hero_height*0.32)
+	_draw_scene_sprite(SchoolScenes.STREET,SchoolScenes.STREET_FRAMES[2],stall,hero_height*0.89)
+	if not reduce_motion:
+		for i in range(3):
+			var t := fposmod(elapsed*0.78+i*0.32,1.0)
+			var steam := stall+Vector2(-hero_height*0.22+sin(t*5.0)*11.0,-hero_height*0.53-t*hero_height*0.30)
+			draw_circle(steam,4.0+t*12.0,Color(0.97,0.87,0.70,(1.0-t)*0.28))
+
+	for i in School.CROSSINGS.size():
+		var crossing := Vector2(w*School.CROSSINGS[i],g)
+		var progress := School.bike_progress(i,elapsed)
+		var active := progress < 1.0
+		var signal_color := GOLD if active else Color("a7d1b2")
+		for stripe in range(4):
+			var x := -49.0+stripe*24.0
+			draw_line(crossing+Vector2(x+11,-31),crossing+Vector2(x-6,16),Color(PAPER,0.52),5,true)
+		var marker := crossing-Vector2(0,hero_height*0.81)
+		draw_style_box(_style(INK,signal_color,8),Rect2(marker-Vector2(60,17),Vector2(120,32)))
+		_text("WAIT" if active else "CROSS",marker+Vector2(0,5),17,signal_color,true)
+		if active:
+			var bike := crossing+Vector2(lerpf(-205.0,205.0,progress),-13.0)
+			var pose := 0 if reduce_motion else int(progress*12.0)%2
+			_draw_scene_sprite(SchoolScenes.STREET,SchoolScenes.STREET_FRAMES[pose],bike,hero_height*0.68)
+
+	var stop := Vector2(w*School.BUS_STOP,g-18.0)
+	_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[4],stop,hero_height*0.91)
+	var stop_sign := stop-Vector2(0,hero_height+30)
+	draw_style_box(_style(INK,TEAL,9),Rect2(stop_sign-Vector2(70,18),Vector2(140,36)))
+	_text("BUS STOP",stop_sign+Vector2(0,5),19,PAPER,true)
+	if elapsed < 2.8 and state == "playing":
+		var wave := Vector2(w*0.225,g-hero_height*0.23)
+		_draw_scene_sprite(SchoolScenes.CAST,SchoolScenes.CAST_FRAMES[4],wave,hero_height*0.65,Color(1,1,1,1.0-smoothstep(1.9,2.8,elapsed)))
+		_text("See you at the stop!",wave-Vector2(0,hero_height*0.81),19,PAPER,true)
+
+func _draw_scene_sprite(texture: Texture2D, region: Rect2, feet: Vector2, height: float, tint: Color = Color.WHITE) -> void:
+	var size := region.size*(height/region.size.y)
+	_oval(feet,Vector2(size.x*0.33,6.0),Color(0.12,0.08,0.04,0.31*tint.a))
+	draw_texture_rect_region(texture,Rect2(feet-Vector2(size.x*0.5,size.y),size),region,tint)
 
 func _draw_school_prop(base: Vector2, index: int, width: float, tint: Color) -> void:
 	var region: Rect2 = SchoolArt.PROPS_FRAMES[index]
@@ -2071,10 +2243,10 @@ func _draw_cover_props() -> void:
 	var cover := _cover_positions()
 	for i in cover.size():
 		var base := Vector2(cover[i],floor_y())
-		var width: float = SchoolArt.PROP_WIDTHS[i]*(1.0 if portrait else 0.84)
+		var width: float = SchoolArt.PROP_WIDTHS[2 if school.level == School.Level.CLASSROOM else i]*(1.10 if portrait else 0.88)
 		var hiding := hidden_in_cover and absf(player.x-cover[i]) <= _school_cover_radius(i)
 		var tint := Color(1,1,1,0.28 if hiding else 1.0)
-		var prop_index := 2 if school.level==1 else i
+		var prop_index := 2 if school.level == School.Level.CLASSROOM else i
 		_draw_school_prop(base,prop_index,width,tint)
 		if hiding:
 			var tag := base+Vector2(0,20)
@@ -2286,7 +2458,7 @@ func _draw_hazard(hazard: Dictionary) -> void:
 			if hazard.kind == "ticket": _text("BUG",p+Vector2(-12,5),11,ROSE)
 
 func _draw_controls() -> void:
-	var labels := {"left":"MOVE", "right":"MOVE", "dash":"DASH", "parry":"PARRY", "jump":"JUMP", "fire":"LETTER", "sneak":"DUCK", "hide":"HIDE", "pencil":"PENCIL"}
+	var labels := {"left":"MOVE", "right":"MOVE", "dash":"DASH", "parry":"PARRY", "jump":"JUMP", "fire":"LETTER", "sneak":"DUCK", "hide":"HIDE"}
 	for action in control_rects:
 		var rect: Rect2 = control_rects[action]
 		var bg := Color("213e37")
@@ -2317,8 +2489,6 @@ func _draw_controls() -> void:
 		elif action=="sneak":
 			draw_circle(center+Vector2(7,-10)*ui_scale,5.5*ui_scale,PAPER,true)
 			draw_polyline(PackedVector2Array([center+Vector2(4,-4)*ui_scale,center+Vector2(-9,3)*ui_scale,center+Vector2(1,10)*ui_scale,center+Vector2(13,10)*ui_scale]),PAPER,4.0*ui_scale,true)
-		elif action=="pencil":
-			draw_line(center+Vector2(-10,10)*ui_scale,center+Vector2(10,-10)*ui_scale,GOLD if school.pencil else Color("788681"),6*ui_scale,true)
 		elif action=="parry":_heart(center,17*ui_scale,Color("ed9cab"))
 		else:_envelope(center,PAPER,1.35*ui_scale)
 		var label: String = labels[action]
