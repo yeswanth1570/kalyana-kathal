@@ -50,7 +50,7 @@ static func student_feet(index: int, progress: float) -> Vector2:
 	var depth := 1.0 - progress if index == 0 else progress
 	var projected := 1.0 - (0.78 * depth + 0.22 * depth * depth) if index == 0 else 0.78 * depth + 0.22 * depth * depth
 	var feet := start.lerp(finish, projected)
-	feet.y += (0.033 if index == 0 else 0.026) * smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.81, 1.0, progress))
+	feet.y += (0.018 if index == 0 else 0.026) * smoothstep(0.0, 0.17, progress) * (1.0 - smoothstep(0.81, 1.0, progress))
 	return feet
 
 static func student_scale(feet: Vector2) -> float:
