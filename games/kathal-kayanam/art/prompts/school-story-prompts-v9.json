@@ -1,0 +1,25 @@
+{
+  "generator": "Built-in ImageGen",
+  "assets": [
+    {
+      "file": "classroom-v9.png",
+      "reference": "school-v2.png",
+      "prompt": "Wide 16:9 original 2D game background painting for a 1999 Tamil Nadu secondary school, richly hand-inked vintage Tamil storybook look matching the existing school corridor reference. Long classroom seen from the side with slight depth. Left end is the back of the class with tall arched green windows and warm morning light, right end is front of class with broad dark green chalkboard spanning right half and a simple clock overhead. Painted warm ochre lime wall, lower teal wainscot, terracotta floor in lower quarter with bright striped shadows. Main play lane is horizontal and completely open across bottom quarter. NO desks, chairs, people or figures and NO text. Furniture and cast are separate game layers. Architectural details extend across entire width. No blank borders."
+    },
+    {
+      "file": "walk-home-v9.png",
+      "reference": "school-v2.png",
+      "prompt": "Wide 16:9 original side scrolling 2D game panorama of a 1999 Tamil Nadu small-town street after school, hand-inked painterly vintage Tamil storybook look, match colors and brush style of the referenced school corridor. Afternoon gold on pastel plaster tea shop facades, tiled roofs, cloth awnings, a tamarind tree and a blue public bus-stop shelter near the far right. Elevation from the side, shallow perspective. Continuous unobstructed flat horizontal pedestrian lane fills lower quarter, soft cast shadows, a far roadway. Background only: empty of people, bicycles, vehicles and street stalls, no legible text or signage. Warm romantic atmosphere, original composition, all four corners painted."
+    },
+    {
+      "file": "school-cast-v9.png",
+      "reference": "school-students-v8.png",
+      "prompt": "Transparent game sprite atlas, precisely 3 columns and 2 rows, separated by transparent gutters. Original inked 1999 Tamil school visual style from the reference, full-body each cell aligned to ground, same design and facial features across poses. Top row same original middle-aged Tamil woman teacher Revathi, dark hair in bun, burgundy sari with mustard hem, slender glasses and chalk in hand: (1) back to camera writing at implied chalkboard, (2) three-quarter turn looking over shoulder, (3) fully facing class looking viewer-left, serious but kind. Bottom row (1) Tamil schoolgirl Sharmila in teal pinafore and cream blouse with two braided ribbons, sitting facing viewer-left and holding a book, (2) same Sharmila standing waving warmly in same costume and face, (3) Murugan's Tamil mother in leaf-green sari, calm thoughtful face standing with folded arms. No actual chalkboard, seat, other props, floor shadows, or captions. Six complete separate silhouettes, genuinely transparent outside outlines."
+    },
+    {
+      "file": "street-props-v9.png",
+      "reference": "school-props-v7.png",
+      "prompt": "Genuinely transparent original game asset atlas, exactly three equal columns in one row with ample gutters. Vintage inked Tamil storybook style matching reference. First two cells show same teal steel bicycle with teenage rider side-on facing right, feet on pedals with distinct opposite pedal positions, neutral cream shirt and navy shorts. All wheels, face and shoes inside each tile. Third cell a warm red wooden south Indian tea and banana stall on two wheels, striped fabric awning, brass kettle and pennant, complete silhouette. No text, drop shadows, ground, framing or haze. Three fully separate transparent cutouts."
+    }
+  ]
+}

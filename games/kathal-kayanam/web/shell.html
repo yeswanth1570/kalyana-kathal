@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#203936">
+<meta name="description" content="Kathal Kayanam follows Murugan and Sharmila from school to their wedding across five playable acts.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>$GODOT_PROJECT_NAME</title>
+$GODOT_HEAD_INCLUDE
+<link rel="stylesheet" href="chat.css?v=school-v12">
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#203936;color:#f6e9cf;font-family:Georgia,serif;overscroll-behavior:none}body{height:100dvh}#canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}#loading{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;background:radial-gradient(ellipse at 50% 25%,#426b59,#203936 75%);text-align:center;z-index:5}h1{font-size:clamp(38px,7vw,74px);line-height:.96;margin:28px 0 16px;letter-spacing:-.04em}p{max-width:440px;line-height:1.65;font:16px system-ui;color:#d0dccb}progress{width:min(320px,80vw);height:7px;accent-color:#dca74e;margin:20px}#start{border:1px solid #e89c99;background:#bf505e;color:#fff1db;font:600 18px system-ui;border-radius:12px;padding:18px 30px;cursor:pointer;min-height:56px}#error{display:none;max-width:620px;white-space:pre-wrap;font:14px system-ui;color:#ffccbd;line-height:1.7}#fullscreen{position:fixed;right:max(8px,env(safe-area-inset-right));bottom:max(4px,env(safe-area-inset-bottom));z-index:3;background:#203936d9;border:1px solid #a3b38c;border-radius:7px;color:#f6e9cf;padding:7px;font:11px system-ui;cursor:pointer}body[data-scene="playing"] #fullscreen{display:none}#loading.hidden{display:none}canvas{user-select:none;-webkit-user-select:none}
+@font-face{font-family:Cinema;src:url("CinzelDecorative-Bold.ttf") format("truetype");font-display:swap}#loading{background:linear-gradient(90deg,#102b25ee,#102b2555),url("cover-v2.png") center/cover}#loading h1{font-family:Cinema,Georgia,serif;color:#f1d69a;text-shadow:0 4px 18px #071c14}#start{box-shadow:0 8px 28px #0004;border-color:#e8b27c}body[data-scene="exploring"] #fullscreen{display:none}</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="0" aria-label="Kathal Kayanam game. Keyboard: WASD or arrows move, E interacts, Shift runs or dashes, Space sneaks or jumps, Escape pauses. Touch controls are on screen.">Your browser needs WebGL 2 to play this game.</canvas>
+<button id="fullscreen" title="Toggle full screen" aria-label="Toggle full screen">⛶ Full screen</button>
+<div id="loading">
+<h1>KATHAL<br>KAYANAM</h1>
+<p>Five acts. One love story.</p>
+<progress id="progress" aria-label="Loading game" hidden></progress>
+<p id="status" role="status" hidden></p>
+<button id="start" hidden>Play</button>
+<p id="error" role="alert"></p>
+</div>
+<script src="chat.js?v=school-v12"></script>
+<script src="$GODOT_URL"></script>
+<script>
+const config=$GODOT_CONFIG;
+const engine=new Engine(config);
+const loading=document.getElementById('loading'),status=document.getElementById('status'),progress=document.getElementById('progress'),start=document.getElementById('start'),canvas=document.getElementById('canvas');
+let running=false;
+function failure(e){loading.classList.remove('hidden');progress.hidden=true;start.hidden=true;status.textContent='The game couldn’t start.';status.hidden=false;const error=document.getElementById('error');error.style.display='block';error.textContent=String(e?.message||e)+'\n\nTry the latest Chrome, Safari or Firefox with WebGL 2 enabled, then reload. If the connection failed, try again on Wi-Fi.';console.error(e)}
+const missing=Engine.getMissingFeatures({threads:false});
+if(missing.length){failure('Your browser is missing: '+missing.join(', '))}else{
+start.hidden=false;
+start.addEventListener('click',async()=>{if(running)return;running=true;start.hidden=true;progress.hidden=false;status.textContent='Loading…';status.hidden=false;try{await engine.startGame({canvas,onProgress:(current,total)=>{if(total>0){progress.max=total;progress.value=current;status.textContent='Loading… '+Math.round(current/total*100)+'%'}}});loading.classList.add('hidden');canvas.focus()}catch(e){failure(e)}});
+}
+const fullscreen=document.getElementById('fullscreen');
+fullscreen.hidden=!(document.fullscreenEnabled||canvas.webkitRequestFullscreen);
+fullscreen.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else if(canvas.webkitRequestFullscreen)canvas.webkitRequestFullscreen()}catch{/* Fullscreen support varies among browsers. */}canvas.focus()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)canvas.blur()});
+window.addEventListener('pagehide',()=>canvas.blur());
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+</script>
+</body>
+</html>

@@ -41,6 +41,17 @@ jobs:
       - name: Import and validate Life Quest
         run: godot --headless --editor --path games/life-quest --quit
 
+      - name: Import and test Kathal Kayanam
+        run: |
+          set -o pipefail
+          game=games/kathal-kayanam
+          godot --headless --editor --path "$game" --quit
+          for suite in gameplay campaign art; do
+            godot --headless --path "$game" --script "res://tests/$suite.gd" 2>&1 | tee -a kathal-kayanam-tests.log
+          done
+          if grep -E 'SCRIPT ERROR:|^ERROR:' kathal-kayanam-tests.log; then exit 1; fi
+          node --test "$game/tests/chat.test.cjs"
+
       - name: Test Qwen game API and browser chat syntax
         run: |
           python3 -m unittest discover -s games/life-quest/backend/tests -v
@@ -76,6 +87,15 @@ jobs:
           godot --headless --editor --path "$stable" --quit
           export_life_quest "$stable" "$PWD/build/web/life-quest" game-v5
 
+      - name: Export Kathal Kayanam for phones and browsers
+        run: |
+          game=games/kathal-kayanam
+          destination="$PWD/build/web/kathal-kayanam"
+          mkdir -p "$destination"
+          godot --headless --path "$game" --export-release Web "$destination/game-v1.html"
+          cp "$destination/game-v1.html" "$destination/index.html"
+          cp "$game/web/chat.js" "$game/web/chat.css" "$game/art/ui/cover-v2.png" "$game/fonts/CinzelDecorative-Bold.ttf" "$game/fonts/CinzelDecorative-OFL.txt" "$destination/"
+
       - name: Verify exported games
         run: |
           test -s build/web/index.html
@@ -86,6 +106,10 @@ jobs:
           test -s build/web/life-quest-preview/game-v12.wasm
           test -s build/web/life-quest/game-v5.pck
           test -s build/web/life-quest-preview/index.html
+          for file in index.html game-v1.js game-v1.pck game-v1.wasm chat.js chat.css; do
+            test -s "build/web/kathal-kayanam/$file"
+          done
+          if grep -q '\$GODOT_' build/web/kathal-kayanam/index.html; then exit 1; fi
           if grep -q '\$GODOT_' build/web/life-quest*/index.html; then exit 1; fi
           if find build/web -iname '*pilot*' -o -iname '*.sqlite' | grep -q .; then exit 1; fi
           touch build/web/.nojekyll

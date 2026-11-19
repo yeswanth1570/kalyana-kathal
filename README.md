@@ -1,5 +1,7 @@
 # Kalyana Kathal: The Life Quest
 
+**Kathal Kayanam** tells the five-act story with four-direction exploration, touch controls, and offline Tamil and English dialogue. [Play Kathal Kayanam](https://yeswanth1570.github.io/kalyana-kathal/kathal-kayanam/) · [Source and controls](games/kathal-kayanam/README.md)
+
 **New five-act mobile game:** [Play the Life Quest](https://yeswanth1570.github.io/kalyana-kathal/life-quest/) · [Source and controls](games/life-quest/README.md)
 
 The new game lives in `games/life-quest/` and includes School, College, Office, Family and Wedding encounters, touch controls, settings, local progress, original art/audio and live typed Qwen character chat through your PC. The original college prototype below remains available at the site root URL.

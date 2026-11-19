@@ -1,0 +1,36 @@
+{
+  "generator": "Built-in ImageGen",
+  "assets": [
+    {
+      "file": "props/veranda-cover-v12.png",
+      "reference": "stages/school-v2.png",
+      "prompt": "Transparent original game sprite atlas, precisely 3 equal columns one row with generous transparent gutters. Match the visual style of the referenced painted Tamil Nadu school veranda: warm ink outlines, hand-painted aged wood, teal and amber. First tile a squat tall terracotta pot with large green fern leaves and trailing gold pothos, waist high. Second tile a long heavy vintage wooden backed school bench in 3/4 side view, seat surface and four feet visible, warm dark wood and teal peeling paint. Third tile a tall arched teal classroom doorway viewed head-on with worn plaster arch and a dark open interior, with its old teal door swung open inward and a defined stone threshold at bottom. Clear transparent cutout silhouettes with no loose elements, shadows, scenery, gradients or labels. Each entire object fits in its tile."
+    },
+    {
+      "file": "props/veranda-foreground-v12.png",
+      "reference": "stages/school-v2.png",
+      "prompt": "Transparent original game sprite atlas precisely 3 equal columns one row. First tile one full vertical dark teak veranda pillar with carved capital and stone foot, cropped straight at top. Second tile a low dense overhanging strand of silhouetted deep green leaves and pink bougainvillea, wider than tall, all leaves contained. Third tile a layered cluster of shaded fern fronds growing out from lower corner. Warm near-black teal silhouette tones, organic hand inked edges, vintage Tamil storybook look matching the referenced veranda. No floor, scenery, text or cast shadows, fully transparent between assets.",
+      "follow_up": "Clean this exact three-item cutout sheet for an alpha sprite atlas. Preserve the teak pillar, bougainvillea vine, and fern positions and appearance in their three separate equally sized slots. Remove ALL white and grey backing, cell dividers, haze, cast shading and texture outside the three isolated outlines. Background alpha must be zero throughout all gutters, corners, and holes between leaves. No labels. Keep the original shapes and fill colors."
+    },
+    {
+      "file": "stages/veranda-depth-v12.png",
+      "reference": "stages/school-v2.png",
+      "prompt": "Original 2D game background painting, wide 16:9. Courtyard and classroom as seen through two open shuttered veranda windows in a Tamil Nadu school in 1999. Use the same lush painterly hand-inked traditional Tamil cinema atmosphere as the reference. Far left sunlit palm trees and warm plaster opposite buildings, far right a shaded classroom with ceiling fan, green walls and wooden desks. Depth view, gentle atmosphere, golden sunlight dust. Full bleed painted image, no people, writing or text. This image will be used behind window portals as a distant depth layer."
+    },
+    {
+      "file": "characters/veranda-sundaram-v12.png",
+      "reference": "characters/school-master-v7.png",
+      "prompt": "Original transparent cutout game sprite atlas with exactly four columns and one row. Match the original Sundaram identity from the reference: same stout middle-aged Tamil PT master, dark handlebar moustache, strong eyebrow, slick dark hair, ochre short-sleeved uniform and shorts, striped cream socks, brown shoes and brass whistle on red lanyard. No scenery. Full body same size, facing right in tiles 1,2,3 and front in tile 4. First tile a low forward lean shading eyes with raised palm, squinting right. Second tile leans peering through an implied window, head slightly up, fingers resting on implied sill, no actual sill. Third tile heel raised about to turn, eyebrow raised and whistle swinging away from shirt. Fourth tile front-facing turn position, crouched stance and one heel pivoted. Original warm hand-inked Tamil animation. Four separated complete poses, clear gutters, genuine zero alpha outside silhouettes, no labels, no floor shadows."
+    },
+    {
+      "file": "characters/veranda-life-v12.png",
+      "reference": "characters/school-students-v8.png",
+      "prompt": "Original transparent cutout sprite atlas, exactly four columns in one row with clean equal tiles. In the referenced hand-inked 1999 Tamil school style with subdued teal and brown colors, first and second tiles show the same elderly school caretaker in muted cream shirt and teal dhoti sweeping with a long straw broom: left stroke then right stroke, same facing, same stance, both figures complete. Third tile shows two schoolchildren as a single small grouped sprite, two original figures in muted school uniforms leaning toward each other and whispering, expressive faces but no text. Fourth tile shows a matching pair whispering with a small head and hand gesture change. Full feet and broom in every tile. Genuine transparent outside figures, no surface, scenery, shadows, labels or visible grid."
+    },
+    {
+      "file": "characters/veranda-turn-v12.png",
+      "reference": "characters/veranda-sundaram-v12.png",
+      "prompt": "Original hand-inked transparent 2D game turnaround sprite atlas, exactly four equal columns by two equal rows. Use the provided original Sundaram character as the strict identity reference: middle-aged stocky Tamil PT master, same moustache, eyes, slick black hair, ochre short sleeve school sports polo and shorts, brass whistle, cream socks with maroon stripes, brown cream lace-up shoes. Eight consecutive complete full-body POSES with pads on all sides, a common planted foot line and head size. Reading left to right across top then bottom: 1 right side profile still alert; 2 still body facing right, eyes and head start turning toward camera, heel raises; 3 body turns toward right three-quarter/front, shoulders pull whistle out; 4 front facing pose weight on one foot, eyebrows up; 5 front-facing weight shifts to other foot, whistle swings toward left; 6 left-facing three-quarter pose, heel comes round; 7 left-facing profile with settling shoulder and weight; 8 left side profile settled arms at ease. Distinct successive coherent drawings, smooth turn about same center of hips. Original 1999 Tamil cartoon illustrative style, no labels, ground, lettering, grid lines, cast shadows or background, absolutely transparent all outside outlines."
+    }
+  ]
+}
