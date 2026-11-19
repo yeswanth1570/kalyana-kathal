@@ -1,4 +1,5 @@
 extends SceneTree
+const SchoolArt = preload("res://SchoolArt.gd")
 var failed := 0
 var checks := 0
 func check(ok: bool, message: String) -> void:
@@ -21,5 +22,21 @@ func _initialize() -> void:
 				var frame := image.get_region(Rect2i(Vector2i(x,y)*cell,cell))
 				var bounds := frame.get_used_rect()
 				check(bounds.size.x>cell.x*.2 and bounds.size.y>cell.y*.5,"%s frame %d,%d is not empty"%[item[0],x,y])
+	_check_school_atlas("School run",SchoolArt.RUN,SchoolArt.RUN_FRAMES,8)
+	_check_school_atlas("School crouch-walk",SchoolArt.CROUCH,SchoolArt.CROUCH_FRAMES,8)
+	_check_school_atlas("School crouch transitions",SchoolArt.REACTIONS,SchoolArt.TRANSITION_FRAMES,3)
+	_check_school_atlas("School expressions",SchoolArt.REACTIONS,SchoolArt.HEAD_FRAMES,4)
+	_check_school_atlas("School background students",SchoolArt.STUDENTS,SchoolArt.STUDENTS_FRAMES,12)
 	print("ART RESULT: %d checks, %d failures"%[checks,failed])
 	quit(1 if failed else 0)
+
+func _check_school_atlas(label: String, texture: Texture2D, regions: Array[Rect2], count: int) -> void:
+	var image := texture.get_image()
+	check(image.get_pixel(0,0).a < 0.05,label+" leaves the sheet background transparent")
+	var hashes := {}
+	for region in regions:
+		var frame := image.get_region(Rect2i(region))
+		if not frame.get_used_rect().has_area():
+			continue
+		hashes[hash(frame.get_data())] = true
+	check(hashes.size() == count,label+" has %d distinct, populated poses"%count)

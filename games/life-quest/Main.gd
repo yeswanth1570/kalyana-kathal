@@ -9,6 +9,7 @@ const HERO_RUN: Texture2D = preload("res://art/hero-run-alpha-v3.png")
 const REACTION_FACES: Texture2D = preload("res://art/reaction-faces-v5.png")
 const SCHOOL_OPENING: Texture2D = preload("res://art/school-opening-v6.png")
 const SchoolArt = preload("res://SchoolArt.gd")
+const SchoolMotion = preload("res://SchoolMotion.gd")
 const CAST_SHEET: Texture2D = preload("res://art/cast_sheet-v2.png")
 const SCENERY: Array[Texture2D] = [preload("res://art/school-v2.png"),preload("res://art/college-v2.png"),preload("res://art/office-v2.png"),preload("res://art/family-v2.png"),preload("res://art/wedding-v2.png")]
 const INK := Color("203936")
@@ -33,6 +34,10 @@ var school_duck_latched := false
 var school_move_touches: Dictionary = {}
 var school_speed := 0.0
 var school_duck_blend := 0.0
+var school_step_phase := 0.0
+var school_moving := false
+var school_mood: int = SchoolMotion.Mood.FOCUSED
+var school_relief := 0.0
 var school_whistle := 0.0
 var master_stride := 0.0
 var school_bell_pulse := 0.0
@@ -515,6 +520,10 @@ func _start_stage() -> void:
 		school_duck_latched = false
 		school_speed = 0.0
 		school_duck_blend = 0.0
+		school_step_phase = 0.0
+		school_moving = false
+		school_mood = SchoolMotion.Mood.FOCUSED
+		school_relief = 0.0
 		school_whistle = 0.0
 		master_stride = 0.0
 		school_bell_pulse = 0.85
@@ -765,7 +774,7 @@ func _tick(dt: float) -> void:
 	if stage == 0:
 		var target_speed := axis*(144.0 if school_ducking else 270.0)
 		school_speed = move_toward(school_speed,target_speed,(3100.0 if axis == 0 else 2650.0)*dt)
-		school_duck_blend = move_toward(school_duck_blend,float(school_ducking),dt*11.0)
+		school_duck_blend = move_toward(school_duck_blend,float(school_ducking),dt*(13.0 if reduce_motion else 6.8))
 		if dash_time <= 0 and absf(school_speed)>22.0: facing = signf(school_speed)
 	var old_x := player.x
 	if dash_time > 0:
@@ -784,6 +793,10 @@ func _tick(dt: float) -> void:
 			landing_pose = 0.16
 			_burst(player, Color("d5c8a8"), 4)
 	if stage == 0:
+		var distance := absf(player.x-old_x)
+		school_moving = distance > 12.0*dt
+		if school_moving and dash_time <= 0.0:
+			school_step_phase = SchoolMotion.advance_step(school_step_phase,distance,school_ducking)
 		_tick_stealth(dt)
 		_follow_camera(dt)
 		_update_hud()
@@ -920,6 +933,7 @@ func _tick_stealth(dt: float) -> void:
 		school_last_bell = true
 		school_bell_pulse = 1.5
 		_sound("bell")
+	var was_hidden := hidden_in_cover
 	hidden_in_cover = false
 	if school_ducking:
 		var cover := _cover_positions()
@@ -966,15 +980,21 @@ func _tick_stealth(dt: float) -> void:
 	if school.level == 2 and player.x > _stage_width()*0.72: rate *= 1.18
 	if school.honor_pass: rate *= 0.75
 	awareness = clampf(awareness+(rate if seen else -45.0)*dt,0.0,100.0)
-	if previous < 35.0 and awareness >= 35.0:
-		face_frame = 0
-		face_time = 0.65
+	_update_school_mood(dt,previous,not was_hidden and hidden_in_cover)
 	if awareness >= 100.0:
 		_end_school("failure","caught")
 	elif school.level != 1 and player.x >= _stage_width()-76 and awareness < 70.0:
 		_end_school("success","reached")
 	elif elapsed >= school.TIMES[school.level]:
 		_end_school("failure","bell")
+
+func _update_school_mood(dt: float, previous_awareness: float, entered_cover: bool) -> void:
+	school_relief = maxf(0.0,school_relief-dt)
+	if entered_cover and (previous_awareness >= 35.0 or school_mood in [SchoolMotion.Mood.WORRIED,SchoolMotion.Mood.ALARMED]):
+		school_relief = SchoolMotion.RELIEF_SECONDS
+	if not hidden_in_cover:
+		school_relief = 0.0
+	school_mood = SchoolMotion.mood_after(awareness,school_mood,school_relief)
 
 func _end_school(outcome: String, reason: String) -> void:
 	if stage != 0 or state != "playing" or not school.outcome.is_empty(): return
@@ -1767,7 +1787,16 @@ func _background() -> void:
 			var py := fmod(float(i*97)+sin(age*.4+i)*12,g)
 			draw_circle(Vector2(px,py),1.5,Color(1,0.85,0.5,0.16))
 func _draw_school_atmosphere(origin: Vector2, painted: Vector2) -> void:
-	_draw_school_students()
+	var girl_progress := SchoolMotion.student_progress(1,elapsed)
+	var boy_progress := SchoolMotion.student_progress(0,elapsed)
+	var girl_feet := SchoolMotion.student_feet(1,minf(girl_progress,1.0))
+	var boy_feet := SchoolMotion.student_feet(0,minf(boy_progress,1.0))
+	if girl_feet.y < boy_feet.y:
+		_draw_school_student(1,girl_progress,girl_feet,origin,painted)
+		_draw_school_student(0,boy_progress,boy_feet,origin,painted)
+	else:
+		_draw_school_student(0,boy_progress,boy_feet,origin,painted)
+		_draw_school_student(1,girl_progress,girl_feet,origin,painted)
 	var bell := origin + painted*Vector2(0.398,0.158)
 	if school_bell_pulse>0.0:
 		var wave := fposmod(1.5-school_bell_pulse,0.48)/0.48
@@ -1792,25 +1821,20 @@ func _draw_school_atmosphere(origin: Vector2, painted: Vector2) -> void:
 			var edge := direction.orthogonal()*0.60
 			draw_colored_polygon(PackedVector2Array([at-direction-edge,at+direction-edge,at+direction+edge,at-direction+edge]),Color(0.98,0.88,0.66,sin(t*PI)*0.72))
 
-func _draw_school_students() -> void:
-	# Two separate corridors of depth. These actors are scenery only.
-	for i in range(2):
-		var cycle := fposmod(elapsed+(5.1 if i==0 else 12.7),21.0)
-		if cycle>17.4: continue
-		var direction := 1.0 if i==0 else -1.0
-		var lane := (cycle/17.4) if i==0 else (1.0-cycle/17.4)
-		var center_x := lerpf(-115.0,_stage_width()+110.0,lane)-camera_x*0.84
-		if center_x < -95.0 or center_x > viewport_size.x+95.0: continue
-		var depth_floor := floor_y()-(148.0 if i==0 else 201.0)
-		var frame := i*4+int(cycle*8.0)%4
-		var region: Rect2 = SchoolArt.STUDENTS_FRAMES[frame]
-		var student_height := (126.0 if portrait else 88.0)*(1.0 if i==0 else 0.88)
-		var size := region.size*(student_height/region.size.y)
-		var center := Vector2(center_x,depth_floor)
-		_oval(center,Vector2(27,5),Color(0.14,0.08,0.04,0.20))
-		draw_set_transform(center,0.0,Vector2(direction,1.0))
-		draw_texture_rect_region(SchoolArt.STUDENTS,Rect2(Vector2(-size.x/2.0,-size.y),size),region,Color(0.94,0.89,0.82,0.89))
-		draw_set_transform(Vector2.ZERO)
+func _draw_school_student(index: int, progress: float, feet: Vector2, origin: Vector2, painted: Vector2) -> void:
+	if progress >= 1.0: return
+	var center := origin+painted*feet
+	if center.x < -110.0 or center.x > viewport_size.x+110.0: return
+	var alpha := smoothstep(0.025,0.145,progress)*(1.0-smoothstep(0.86,0.975,progress))
+	var frame := index*6+int(progress*(7.0 if index==0 else 6.0)*6.0)%6
+	var region: Rect2 = SchoolArt.STUDENTS_FRAMES[frame]
+	var student_height := _school_actor_height(true)*SchoolMotion.student_scale(feet)
+	var size := region.size*(student_height/region.size.y)
+	_oval(center+Vector2(0,2),Vector2(student_height*0.16,student_height*0.028),Color(0.14,0.08,0.04,0.24*alpha))
+	draw_set_transform(center,0.0,Vector2(1.0 if index==0 else -1.0,1.0))
+	var anchor: float = SchoolArt.STUDENT_ANCHORS[frame]
+	draw_texture_rect_region(SchoolArt.STUDENTS,Rect2(Vector2(-size.x*anchor,-size.y),size),region,Color(0.93,0.89,0.83,alpha))
+	draw_set_transform(Vector2.ZERO)
 
 func _character(pos: Vector2, kind: String, scale_factor: float, walking: bool) -> void:
 	if stage == 0 and kind in ["hero","teacher"]:
@@ -1889,47 +1913,94 @@ func _school_actor_height(hero: bool) -> float:
 	return 211.0 if hero else 231.0
 
 func _draw_school_actor(pos: Vector2, hero: bool) -> void:
-	var is_action := state in ["playing","paused"]
-	var height := _school_actor_height(hero)
-	var facing_visual := facing if hero else master_facing
-	var lean := 0.0
-	var squash := Vector2.ONE
-	var frame := 0
 	if hero:
-		var moving := is_action and (absf(school_speed)>19.0 or dash_time>0)
-		var walk: int = int(run_cycle*1.37)%4
-		var ducked := is_action and (school_ducking or attack_pose>0 or school_duck_blend>0.38)
-		frame = SchoolArt.hero_frame(moving,ducked,is_action and attack_pose>0,walk)
-		if ducked: height *= 0.56
-		if not reduce_motion and is_action:
-			var velocity_lean := clampf(school_speed/310.0,-1.0,1.0)
-			lean = velocity_lean*0.055
-			if dash_time>0: squash = Vector2(1.11,0.94)
-			elif ducked: squash.y = lerpf(1.11,1.0,school_duck_blend) + 0.014*cos(run_cycle*4.8)
-			else: squash.y = lerpf(1.0,0.90,school_duck_blend)
-	else:
-		var turning := is_action and master_turn>0
-		var turn_progress := 1.0-master_turn/1.2
-		var speaking := state in ["school_result","dialogue","school_ending"]
-		frame = SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),school.listen_time>0,turning,turn_progress,awareness>=65,int(master_stride/11.5))
-		if turning:
-			facing_visual = -school.turn_face if turn_progress < 0.5 else school.turn_face
-			if not reduce_motion: squash.x = 1.0-0.10*sin(clampf(turn_progress,0.0,1.0)*PI)
-		if speaking: facing_visual = -1
-		height *= float(SchoolArt.MASTER_HEIGHTS[frame])
-		if is_action and not reduce_motion and not turning and school.listen_time<=0:
-			squash.y *= 1.0+0.012*cos(master_stride*0.14)
-	var source: Rect2 = SchoolArt.HERO_FRAMES[frame] if hero else SchoolArt.MASTER_FRAMES[frame]
-	var texture: Texture2D = SchoolArt.HERO if hero else SchoolArt.MASTER
-	var ratio := height/source.size.y
-	var size := source.size*ratio
-	var anchors: Array = SchoolArt.HERO_ANCHORS if hero else SchoolArt.MASTER_ANCHORS
-	var dst := Rect2(Vector2(-size.x*float(anchors[frame]),-size.y),size)
+		_draw_school_hero(pos)
+		return
+	var is_action := state in ["playing","paused"]
+	var height := _school_actor_height(false)
+	var facing_visual := master_facing
+	var squash := Vector2.ONE
+	var turning := is_action and master_turn>0
+	var turn_progress := 1.0-master_turn/1.2
+	var speaking := state in ["school_result","dialogue","school_ending"]
+	var frame := SchoolArt.master_frame(speaking,school.outcome=="success" or not school_resolution.is_empty(),school.listen_time>0,turning,turn_progress,awareness>=65,int(master_stride/11.5))
+	if turning:
+		facing_visual = -school.turn_face if turn_progress < 0.5 else school.turn_face
+		if not reduce_motion: squash.x = 1.0-0.10*sin(clampf(turn_progress,0.0,1.0)*PI)
+	if speaking: facing_visual = -1
+	height *= float(SchoolArt.MASTER_HEIGHTS[frame])
+	if is_action and not reduce_motion and not turning and school.listen_time<=0:
+		squash.y *= 1.0+0.012*cos(master_stride*0.14)
+	var source := SchoolArt.MASTER_FRAMES[frame]
+	var size := source.size*(height/source.size.y)
+	var dst := Rect2(Vector2(-size.x*float(SchoolArt.MASTER_ANCHORS[frame]),-size.y),size)
 	var shade := Vector2(height*0.22,9.0 if portrait else 6.0)
 	_oval(pos+Vector2(0,2),shade,Color(0.15,0.08,0.05,0.34))
-	draw_set_transform(pos,lean,Vector2(squash.x*facing_visual,squash.y))
-	draw_texture_rect_region(texture,dst,source)
+	draw_set_transform(pos,0.0,Vector2(squash.x*facing_visual,squash.y))
+	draw_texture_rect_region(SchoolArt.MASTER,dst,source)
 	draw_set_transform(Vector2.ZERO)
+
+func _draw_school_hero(pos: Vector2) -> void:
+	var active := state in ["playing","paused"]
+	var step := SchoolMotion.step_index(school_step_phase)
+	var transition := SchoolMotion.transition_index(school_duck_blend,reduce_motion) if active and dash_time <= 0.0 else -1
+	var base_height := _school_actor_height(true)
+	var texture := SchoolArt.HERO
+	var source := SchoolArt.HERO_FRAMES[0]
+	var anchor := 0.53
+	var reference_height := source.size.y
+	var head := Vector3.ZERO
+	var lift := 0.0
+	if active and attack_pose > 0.0:
+		source = SchoolArt.HERO_FRAMES[7]
+		anchor = 0.38
+		reference_height = source.size.y/0.64
+	elif transition >= 0:
+		texture = SchoolArt.REACTIONS
+		source = SchoolArt.TRANSITION_FRAMES[transition]
+		anchor = SchoolArt.TRANSITION_ANCHORS[transition]
+		reference_height = 431.0
+	elif active and school_ducking:
+		if school_moving:
+			texture = SchoolArt.CROUCH
+			source = SchoolArt.CROUCH_FRAMES[step]
+			anchor = SchoolArt.CROUCH_ANCHORS[step]
+			reference_height = 555.0
+			head = SchoolArt.CROUCH_HEADS[step]
+		else:
+			source = SchoolArt.HERO_FRAMES[4]
+			anchor = 0.51
+			reference_height = source.size.y/0.64
+			head = Vector3(55.0,117.0,124.0)
+	elif active and (school_moving or dash_time > 0.0):
+		texture = SchoolArt.RUN
+		step = 3 if dash_time > 0.0 else step
+		source = SchoolArt.RUN_FRAMES[step]
+		anchor = SchoolArt.RUN_ANCHORS[step]
+		reference_height = 420.0
+		if not reduce_motion and step%4 == 3:
+			lift = base_height*0.035
+	var ratio := base_height/reference_height
+	var size := source.size*ratio
+	var dest := Vector2(-size.x*anchor,-size.y-lift)
+	_oval(pos+Vector2(0,2),Vector2(base_height*0.19,9.0 if portrait else 6.0),Color(0.15,0.08,0.05,0.34))
+	draw_set_transform(pos,0.0,Vector2(facing,1.0))
+	if head == Vector3.ZERO:
+		draw_texture_rect_region(texture,Rect2(dest,size),source)
+	else:
+		_draw_school_crouch_face(texture,source,dest,ratio,head)
+	draw_set_transform(Vector2.ZERO)
+
+func _draw_school_crouch_face(texture: Texture2D, source: Rect2, dest: Vector2, ratio: float, head: Vector3) -> void:
+	# Keep the backpack beside the head and the shoulders below the neck.
+	# The new head overlaps the collar in each registered pose.
+	var body := Rect2(source.position+Vector2(0,head.y),Vector2(source.size.x,source.size.y-head.y))
+	var bag := Rect2(source.position,Vector2(head.x,head.y))
+	draw_texture_rect_region(texture,Rect2(dest+Vector2(0,head.y*ratio),body.size*ratio),body)
+	draw_texture_rect_region(texture,Rect2(dest,bag.size*ratio),bag)
+	var face := SchoolArt.HEAD_FRAMES[school_mood]
+	var face_size := face.size*(head.z*ratio/face.size.x)
+	draw_texture_rect_region(SchoolArt.REACTIONS,Rect2(dest+Vector2(head.x*ratio,0),face_size),face)
 
 func _draw_activity() -> void:
 	var base := _activity_position()

@@ -57,7 +57,7 @@ func run() -> void:
 	game.school.level=2
 	game._start_stage()
 	await capture("stealth-portrait")
-	game.elapsed=3.7
+	game.elapsed=0.4
 	game._tick(.016)
 	await capture("school-crowd-portrait")
 	game.master_turn=0.60
@@ -70,6 +70,12 @@ func run() -> void:
 	for i in range(10):
 		game._tick(.016)
 	await capture("sneak-stride-portrait")
+	for mood in range(4):
+		game.school_mood=mood
+		await capture("school-face-%d-portrait"%mood)
+	for i in range(8):
+		game.school_step_phase=float(i)/8.0
+		await capture("school-crouch-%02d-portrait"%i)
 	game.held.clear()
 	game.player.x=game._stage_width()-110
 	game.master_x=game.player.x-120
@@ -81,8 +87,11 @@ func run() -> void:
 	await capture("scroll-reaction-portrait")
 	game._start_stage()
 	game.player.x=game._cover_positions()[1]
+	game.master_x=game.player.x+260.0
+	game.awareness=44.0
 	game.held["hide"]=true
-	game._tick(.016)
+	for i in range(10):
+		game._tick(.016)
 	game._update_hud()
 	await capture("hidden-portrait")
 	game._end_school("failure","caught")
@@ -94,9 +103,23 @@ func run() -> void:
 	game.player.x=game._school_desks()[0]
 	game._update_hud()
 	await capture("school-notebooks-portrait")
+	root.size=Vector2i(360,740)
+	await process_frame
+	game._resize()
+	game.school.level=0
+	game._start_stage()
+	game.elapsed=0.5
+	await capture("school-crowd-compact")
+	game.player.x=game._stage_width()-110.0
+	game._follow_camera(1.0)
+	game.elapsed=1.8
+	await capture("school-crowd-scroll-compact")
 	root.size=Vector2i(1100,700)
 	await process_frame
 	game._resize()
+	game._start_stage()
+	game.elapsed=0.7
+	await capture("school-crowd-landscape")
 	game.stage=1
 	game._start_stage()
 	game.invincible=0

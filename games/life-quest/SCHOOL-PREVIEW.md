@@ -2,7 +2,7 @@
 
 The school chapter has three scenes. Hold S or Down on a keyboard. On touch, tap Duck to toggle and slide between Left and Right to change direction. A cart blocks Sundaram’s view only while you crouch behind it. Use Q or Pencil for a collected distraction and E or Place for a matching notebook. The caught and timeout paths use the same Sundaram debrief as success, with a repair contract instead of an automatic life loss.
 
-The mobile preview is published at /life-quest-preview/. The stable /life-quest/ path stays pinned to v5 until the v7 preview passes physical Android and iOS checks. Later chapters retain their existing encounters. Push-to-talk remains a later update.
+The mobile preview is published at /life-quest-preview/. The stable /life-quest/ path stays pinned to v5 until the v8 preview passes physical Android and iOS checks. Later chapters retain their existing encounters. Push-to-talk remains a later update.
 
 For live Sundaram replies, run the updated backend/server.py with the existing Qwen configuration and restart the game API if it was already running. The old endpoint remains compatible with the stable game. Use Start-Phone-Chat.ps1 -Preview to create a private preview pairing link, or pair the existing relay endpoint and private code on the preview’s settings screen. An unavailable or old backend leaves every scene playable through the written reply.
 

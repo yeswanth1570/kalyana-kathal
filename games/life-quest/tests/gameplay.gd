@@ -245,6 +245,18 @@ func run() -> void:
 	game._start_stage()
 	check(not game.school_duck_latched,"Restart clears the latched stance")
 	check(game.SchoolArt.master_frame(false,false,false,true,.5,false,0)==4,"Patrol turns transition through the canonical front pose")
+	var motion = game.SchoolMotion
+	check(motion.step_index(motion.advance_step(0.0,20.0,false))==1,"Running advances one of eight poses per 20 world pixels")
+	check(motion.step_index(motion.advance_step(0.0,13.0,true))==1,"Crouch movement uses a shorter cycle")
+	check(motion.advance_step(0.5,0.0,true)==0.5,"Stopping freezes the distance-based phase")
+	check(motion.transition_index(.16,false)==0 and motion.transition_index(.50,false)==1 and motion.transition_index(.84,false)==2,"Duck and stand can show three intermediate silhouettes")
+	check(motion.transition_index(.16,true)==1 and motion.transition_index(.84,true)==1,"Reduced motion uses one intermediate silhouette")
+	for index in range(2):
+		var start_feet: Vector2 = motion.student_feet(index,0.0)
+		var end_feet: Vector2 = motion.student_feet(index,1.0)
+		var travel := end_feet-start_feet
+		check(travel.x*travel.y<0.0,"Student %d follows the slope of the corridor"%(index+1))
+		check((motion.student_scale(end_feet)-motion.student_scale(start_feet))*travel.x<0.0,"Student %d scales with projected depth"%(index+1))
 
 	game.master_facing=1
 	game.player.x=game._cover_positions()[2]
@@ -258,6 +270,22 @@ func run() -> void:
 	game.awareness=0
 	game._tick(.1)
 	check(game.school_ducking and not game.hidden_in_cover and game.awareness>0,"Ducking in the open slows but does not remove detection")
+	var phase_before: float = game.school_step_phase
+	game.awareness=35
+	game._update_school_mood(0.0,0.0,false)
+	check(game.school_mood==motion.Mood.WORRIED,"Murugan looks worried at 35 percent")
+	game.awareness=70
+	game._update_school_mood(0.0,35.0,false)
+	check(game.school_mood==motion.Mood.ALARMED,"Murugan looks alarmed at 70 percent")
+	game.awareness=68
+	game._update_school_mood(0.0,70.0,false)
+	check(game.school_mood==motion.Mood.ALARMED,"Alarm stays steady just below its entry threshold")
+	game.player.x=game._cover_positions()[2]
+	game._tick(.016)
+	check(game.school_mood==motion.Mood.RELIEVED and is_equal_approx(game.school_relief,.5),"Reaching cover from danger triggers relief for half a second")
+	check(game.school_step_phase==phase_before,"Changing expression leaves the crouch phase alone")
+	game._update_school_mood(.51,68.0,false)
+	check(game.school_mood!=motion.Mood.RELIEVED,"Relief expires after the cover reaction")
 	game._start_stage()
 	game.master_x=600
 	game.master_facing=1
